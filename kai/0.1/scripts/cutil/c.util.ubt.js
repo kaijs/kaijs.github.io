@@ -1,0 +1,1 @@
+define("cutil/c.util.ubt",["dstore/Memory","ui/promptpop/ui.promptpop","ui/alert/ui.alert","plugin/c.plugins"],function(i,t,u){var p=window;return Kai=_.extend(Kai||{},{}),p.Kai=Kai,Kai});
