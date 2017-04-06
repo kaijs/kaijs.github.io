@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: c.topic.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: c.topic.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @description:topic
+ * @param {string} topicName - The title of the book.
+ * @param {string} source - The author of the book.
+ * @file topic，可以在不同view之间发送以交换数据
+ * @author chenxiangyun01@chinatopcredit.com
+ * @module topic/c.topic
+ * @example
+ //发布事件
+ trialNoteSaveRequireTopic.set('data', {
+     requestData: true,
+     isSubmit: false,
+     from:self.viewName,
+     fromParent:self.parentViewName
+ });
+ trialNoteSaveRequireTopic.publish();
+
+ //订阅事件
+ self.subscribe(trialNoteSaveRequireTopic, function(e) {
+   if(!self.viewName){
+     return false;
+   }
+   if(self.viewName &amp;&amp; self.viewName.indexOf(e.data.fromParent) &lt; 0){
+     return false;
+   }});
+ */
+ define([
+	"common/c.class.inherit",
+  'dojo/topic',
+  "topic/c.abstract.topic"
+], function (
+  cCoreInherit,
+  topic,
+  cAbstractTopic
+) {
+
+  /**
+  * @description Topic父类，封装ajax访问, 该类可以直接被实例化
+  * @namespace topic/c.topic
+  * @alias topic/c.topic
+  */
+ var BaseTopic = new cCoreInherit.Class(cAbstractTopic,{
+
+ 	__propertys__: function () {
+      /**
+       * 数据请求url, 必填
+       * @name topic/c.topic#topicName
+       * @type {string}
+       */
+       this.topicName = '';
+
+      /**
+       * 请求参数,必选
+       * @name cAbstractTopic#param
+       * @type {object}
+       */
+       this.target = [];
+
+       this.source = null,
+
+      /**
+       * 数据返回时的自定义格式化函数
+       * @method cAbstractTopic#dataformat
+       * @type {function}
+       */
+       this.data = null;
+
+      /**
+       * 可选，存放用于验证的函数集合
+       * @name "topic/c.topic"#validates
+       * @memberof topic/c.topic
+       * @type {array}
+       */
+       this.status = null;
+
+       /*订阅者集合*/
+       this.subscribers = [];
+
+       this.callbacksObj = {
+
+       }
+ 	},
+
+    /**
+     * 复写自顶层Class的initialize，赋值队列
+     * @param {Object} options 初始化参数
+     * @private
+     */
+     initialize: function ($super, options) {
+      var self = this;
+     	if(_.isFunction($super)){
+     		$super(options);
+     	};
+      topic.subscribe(self.topicName,function(e){
+        $.proxy(self.executeCallback,self)(e);
+      });
+     },
+
+    /**发送topic*/
+    publish:function(){
+      topic.publish(this.topicName,{
+        status: this.status,
+        data:this.data,
+        source:this.source,
+        sourceParentViewName:this.sourceParentViewName,
+        target:this.target || []
+      });
+    },
+
+    /**订阅topic
+    * @method
+    * @param {string} viewName - 页面名称
+    * @param {function} callback - 接受到主题后的回调函数
+    */
+    subscribe:function(viewName,callback){
+      if(_.contains(this.subscribers,viewName)){//使用自己的viewName订阅事件
+        //return false;//TBD replace the old callback instead
+      }else{
+        this.subscribers.push(viewName);
+      }
+      this.callbacksObj[viewName] = function(e){
+        callback.apply(self,[e]);
+      };
+    },
+
+    /**
+    取消订阅主题
+    * @method
+    * @param {string} viewName - 页面名称
+    */
+    unsubscribe:function(viewName){
+      this.subscribers = _.without(this.subscribers,viewName);//从该topic中删除该监听者
+      this.callbacksObj[viewName] = null;//回调函数中删除对应的回调
+      delete this.callbacksObj[viewName];
+    },
+
+    /**
+    * Assign the project to an employee.
+    * @private
+    * @param {Object} employee - The employee who is responsible for the project.
+    * @param {string} employee.name - The name of the employee.
+    * @param {string} employee.department - The employee's department.
+    */
+    addTarget:function(targetArray){
+      this.target.concat(targetArray || []);
+    },
+
+    /**
+    设置属性
+    * @method
+    * @param {string} key - 属性名称
+    * @param {any} data - 属性值
+    * @return {boolean}
+    */
+    set:function(key,data){
+      this[key] = data;
+      return true;
+    },
+
+    executeCallback:function(e){
+      var self = this;
+      _.each(self.subscribers,function(subscriber){
+        if(_.isEmpty(e.target) || _.contains(e.target,subscriber)){//如果该主题的目标用户为空或则自己被包含在目标用户中
+          self.callbacksObj[subscriber] &amp;&amp; self.callbacksObj[subscriber](e);
+        }
+      });
+    }
+  });
+      /**
+   * Topic的单例获取方式
+   * @namespace topic/c.topic
+   * @method cAbstractTopic.getInstance
+   * @returns {object}
+   */
+   BaseTopic.getInstance = function () {
+    if (this.instance instanceof this) {
+      return this.instance;
+    } else {
+      return this.instance = new this();
+    }
+  };
+
+  return BaseTopic;
+});
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="topic_c.module_topic.html">topic/c.topic</a></li></ul><h3>Namespaces</h3><ul><li><a href="topic_c.topic.html">topic/c.topic</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Thu Oct 13 2016 17:10:21 GMT+0800 (CST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

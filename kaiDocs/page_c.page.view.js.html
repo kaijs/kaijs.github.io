@@ -1,0 +1,2935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: page/c.page.view.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: page/c.page.view.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/*
+ page view的父类
+ @description 职责链模式: 生命周期中从initialize开始包含完整生命周期链，每个链中知道自己的
+ 下一步的生命周期，当生命周期函数发现不允许继续时候returnfalse；允许继续则更新view状态
+ */
+define([
+    'kaiView/pc/topic/topics',
+    'ui/tip/ui.tip',
+    'custom/helper/dijitHelper',
+    'dojo/on',
+    "dojo/_base/lang",
+    'ui/loading/ui.loading',
+    'module',
+    "data/store/common/c.app.store",
+    "ui/promptpop/ui.promptpop",
+    "data/store/c.common.store",
+    "dojo/parser",
+    "dojo/topic",
+    "dijit/registry",
+    "dojo/aspect",
+    "dojo/dom",
+    "cutil/c.util.kai",
+    "dojo/promise/all",
+    "3rdlibs/vue-1.0.0",
+    //"3rdlibs/vue-2.0.1",
+    ],
+    function (
+      kaiViewTopics,
+      Tip,
+      dijitHelper,
+      on,
+      lang,
+      loading,
+      module,
+      _stores,
+      promptpop,
+      CommonStore,
+      _parser,
+      topic,
+      _registry,
+      aspect,
+      dom,
+      cUtilKai,
+      all,
+      Vue
+      ) {
+        "use strict";
+        /**
+         * 根元素,jQuery对象
+         * @name cPageView.prototype.$el
+         */
+
+        /**
+         * 根元素，原生dom对象
+         * @name cPageView.prototype.el
+         */
+
+        /**
+         * 定义事件
+         * @name cPageView.prototype.events
+         * @example
+         *  events: {
+     *    "click .js-icon": "open",
+     *    "click .js-edit": function() {}
+     *  },
+         *  open: function() {}
+         */
+        /**
+         * 查找子元素
+         * @method cPageView.prototype.$
+         * @param {string} selector 选择器
+         * @example
+         * this.$('.js-list')
+         */
+        var StackStore = CommonStore.StackStore.getInstance();//纪录view历史
+        var UserStore = CommonStore.UserStore.getInstance();//纪录用户信息
+        var indexLevelTabChangeRequireTopic = kaiViewTopics.indexLevelTabChangeRequire.getInstance();//主页级别的显示事件
+        var indexLevelTabCloseRequireTopic = kaiViewTopics.indexLevelTabCloseRequire.getInstance();//主页级别的关闭
+        var colorArray = [
+        'SpringGreen',
+        'Tan',
+        'Teal',
+        'Thistle',
+        'Tomato',
+        'Turquoise',
+        'Violet',
+        'VioletRed'
+        ];
+        var parser = {};
+        var registry = {};
+
+        var PageView = Backbone.View.extend(/** @lends cPageView.prototype */{
+            //onLoadCallbacks:[],
+
+            /**
+             * 滚动条位置
+             * @private
+             */
+            scrollPos: {x: 0, y: 0},
+            /**
+             * view的头部,兼容h5和hybrid的头部设置, h5是html实现，hybrid是native控制
+             * @example
+             * this.header.set({
+       *   back: {
+       *     tagname: 'back',
+       *     callback: function () {
+       *     }
+       *   },
+       *   center: {
+       *     tagname: 'title',
+       *     value: ['精品特价', '11月24日 周一出发']
+       *   },
+       *   right:  [{
+       *     tagname: 'test',
+       *     value: '定义class',
+       *     // h5自定义图片使用cls
+       *     classname: 'custom_class',
+       *     // hybrid自定义图片，只支持本地图片
+       *     imagePath: 'monitor/webresource/img/demo.png',
+       *     pressedImagePath: 'monitor/webresource/img/demo.png'
+       *     callback: function() {
+       *     }
+       *   }],
+       *   moreMenus:[{
+       *     tagname: 'more_my_favorite', iconname: 'share', value: '分享',
+       *     callback: function (data, index, el) {
+       *     }
+       *   },
+       *   {
+       *     tagname: 'more_phone', iconname: 'tel', value: '联系我们',
+       *     callback: function () {
+       *     }
+       *   },
+       *   {
+       *     tagname: 'more_my_order', iconname: 'file', value: '我的订单',
+       *     callback: function () {
+       *     }
+       *   },
+       *   {
+       *     tagname: 'more_my_favorite', iconname: 'love', value: '我的收藏',
+       *     callback: function () {
+       *     }
+       *   },
+       *   {
+       *     tagname: 'more_message_center', iconname: 'email', value: '消息中心',
+       *     callback: function () {
+       *     }
+       *   },
+       *   {
+       *     tagname: 'more_home', iconname: 'home', value: '首页',
+       *     callback: function () {
+       *     }
+       *   }]
+       * });
+             * // 局部更新头部
+             * this.header.updateHeader({})
+             * // 隐藏头部
+             * this.header.hide();
+             * // 显示头部,默认是显示的，在隐藏后可以调用次方法
+             * this.header.show();
+             */
+            header: null,
+
+
+            /**
+             * UBT统计用,web 环境下使用pageid
+             */
+            pageid: 0,
+
+            /**
+             * UBT统计用,hybrid 环境下使用pageid
+             */
+            hpageid: 0,
+
+            /**
+             * 页面切换时，是否要滚动至顶部,
+             * 默认``true``
+             */
+            scrollZero: true,
+
+            /**
+             * 页面切换时，是否执行onShow
+             * 默认``true``
+             */
+            triggerShow: true,
+
+            /*
+            check if shall create a view
+            */
+            triggerCreate:true,
+
+            /**
+             * 页面切换时，是否执行onHide
+             * 默认``true``
+             */
+            triggerHide: true,
+
+            /**
+             * 直落代码,设置此属性和pageid属性后,将会开启电话号码直落功能
+             * @var View.cPageView.businessCode
+             * @type {string}
+             */
+
+            /**
+             * 前一个页面的viewName
+             * @var View.cPageView.lastViewId
+             * @type {string}
+             * @deprecated
+             */
+
+            /**
+             * 前一个页面的viewName
+             * @var View.cPageView.referrer
+             * @type {string}
+             */
+
+            events: {
+                "click [data-viewname]": 'initSubView',//全局的事件监听
+            },
+
+            /**存储用户信息*/
+            UserStore: UserStore,
+
+            /*当前页面显示所使用的data
+            fix error.There should not be object in prototype chain
+            */
+            //viewData: {},
+            /**
+             * View构造函数 extended from backonbjs
+             * @private
+             */
+             //parser:{},
+
+             //registry:{},
+
+             /*
+             If the view defines an initialize function, it will be called when the view is first created.
+             */
+            initialize: function (args) {
+                var self = this;
+                if (!args.fsm) {
+                    //alert(args.fsm);
+                }
+                self.fsm = args.fsm;//状态机
+                //parser.parse = self.parser.parse;
+                //registry.byId = self.registry.byId;
+
+                //parser.parse = _.bind(parser.parse,self);
+                //registry.byId = _.bind(registry.byId,self);
+                self.parser = {};
+                self.registry = {};
+                self.parser.parse = self.parserMethodFactory.getInstance(self);
+                self.registry.byId = self.registryMethodFactory.getInstance(self);
+                self.registry.byNode = _registry.byNode;
+
+                if (self.fsm.can('startInitializing')) {
+                    self.fsm.startInitializing();//step into initializing state
+                }
+                this.id = this.$el.attr("id");//unique id for the sub-viewport dom
+                this.viewName = args.viewName;//view名称
+                //this.isH5 = args.isH5;//是否是H5环境
+                this.templateString = args.templateString;//模版字符串
+                this.needReplaceTemplate = args.needReplaceTemplate;//是否需要替换模版
+                this.parsed = args.parsed;//是否已经dojo解析过
+                this.isEmbeded = args.isEmbeded;//是否是嵌入的子view
+                this.isViewDataAsync = args.isViewDataAsync;//是否是嵌入的子view
+                self.logColor = args.logColor;
+                self.childViewItems = args.childViewItems;
+                self.childViewNames = _.pluck(self.childViewItems,'id');
+                self.viewItem = args.viewItem;
+                self.parentViewItem = args.parentViewItem;
+                self.parentView = args.parentViewItem.id;
+                self.parentViewName = args.parentViewItem.id;//父亲节点名称
+                self.isPreheat = args.isPreheat;//是否只是预热
+                self.isNeedReparse = args.isNeedReparse || true;//是否要重新加载数据
+                self.siblingViewNames = args.siblingViewNames;//兄弟页面
+                self.parentViewInstance = self.getParentViewInstance();//重新加载后子页面也会重新加载
+                self.parentStore = self.getParentStore();//重新加载后子页面也会重新加载
+                self.parentModel = self.getParentViewModel();//重新加载后子页面也会重新加载
+                self.viewStateModel = Kai.viewStates.get(self.viewName);
+                self.contextPostfix = self.getContextPostfix();
+                self.modelObj = args.modelObj;//optional arg
+                self.viewData = {
+
+                };
+                self.ubtData = {
+
+                };
+                /*
+                this._alert = new Alert();
+                this._confirm = new Alert();
+                */
+
+                if(self.parentViewInstance){
+                    self.parentRegistry = self.parentViewInstance.registry;//设置父亲注册表
+                }else{
+                }
+                self.setGrandReistry();
+                self.setSelfWidget();
+                self.setParentWidget();
+                self.$elWidget &amp;&amp; self.$elWidget.set('content',self.templateString);//设置内容
+                /**define backbone model used in view level*/
+                var viewModel = Backbone.Model.extend({});
+
+                var SysModel = Backbone.Model.extend({
+                    defauts: {
+                        viewDataParsed: false
+                    },
+                    initialize: function () {
+                        this.on('change:viewDataParsed', function () {//当viewdata的数据更新页面以后使用dojo解析页面
+                            if (this.get('viewDataParsed')) {//页面已经解析
+                                self.dojoParse();
+                            } else {
+                            }
+                        })
+                    }
+                });
+
+                var viewModel = new viewModel();//for view business level use
+                var _sysModel = new SysModel();//for view lifecycle use only
+                this.model = viewModel;
+                this._sysModel = _sysModel;
+
+                /**define store used in view level*/
+                _stores['K_view_' + this.viewName] = _stores.CustomStore('K_view_' + this.viewName,  Kai.appStoreLifeTime || '1D');//store history
+                _stores['K_view_memory_' + this.viewName] = _stores.CustomStore('K_view_memory_' + this.viewName,  Kai.appStoreLifeTime || '1D');//store history
+                this.store = _stores['K_view_' + this.viewName].getInstance();//create store for this view
+                this.memoryStore = _stores['K_view_memory_' + this.viewName].getInstance();//create store for this view
+                this.store.remove();
+                this.initTracker();
+                self.fsm.finishInitializing();
+                self.sendViewLifecyle('create');
+                self.preheat(args);//调用create方法创建view
+                //self.initVue();//初始化vue事件
+            },
+
+            /*
+            @description 启动计数器
+            */
+            initTracker:function(){
+              var self = this;
+              // 定义一个统计模块 self.viewName
+              alog('define', self.getContextPostfix(), function(){
+                 var viewTracker = alog.tracker(self.viewName);
+                 return viewTracker;
+              });
+            },
+
+            /**
+            @description 设置自己的widget容器
+            */
+            setSelfWidget:function(){
+                var self = this;
+
+                if(self.parentRegistry){
+                    self.$elWidget = self.parentRegistry.byId(self.viewName);
+                }
+                if(!self.$elWidget){
+                    self.$elWidget = self.registry.byId(self.viewName);
+                }
+                if(!self.$elWidget){
+                    self.$elWidget = _registry.byId(self.viewName) || _registry.byNode(self.$el[0]);
+                }
+            },
+
+            /**
+             * 生成头部
+             * @private
+             */
+            _createHeader: function () {
+                var hDom = $('#headerview');
+                this.header = this.headerview = new Header({'root': hDom, 'wrapper': hDom});
+            },
+
+            /*动态获取对应的节点
+            *门面模式 统一的节点抽象
+            @example   els: {
+                'main_container': {
+                  selector: 'pc/index'
+                },
+                'userInfo':{
+                  selector:'#userInfo',
+                  type:'jquery'
+                },
+                'navDom':{
+                  selector:'#navDom',
+                  type:'DOM'
+              }
+            */
+            generateEls: function (els) {
+                var me = this;
+                var elsDefinition;//需要遍历并添加的节点定义集合
+                if (me.mapElS) return;
+                if (me.elsGenerated &amp;&amp; !els) return;//已经生成过，而且不是添加新节点
+                //elsDefinition = els || lang.clone(me.els);//deep copy one els
+                if(!els){
+                    me.els = lang.clone(me.els);//获得自己的深拷贝实例 当页面销毁重建后使用原型链上的备份，并再次使用副本
+                }
+                elsDefinition = els || me.els;//deep copy one els
+                me.refCache = me.refCache || {};
+                /*ref所引用对象的属性值*/
+                _.each(elsDefinition, function (obj, ref) {
+                    var info = elsDefinition[ref];
+                    delete(me.els[ref]);//
+                    Object.defineProperty(me.els, ref, {
+                      //writable:true,
+                      //enumerable: true,
+                      configurable: true,
+                        get: function () {
+                            var refCache = me.refCache || (me.refCache = {}),
+                                cached = refCache[ref],
+                                type = info['type'],
+                                returnEl;
+
+                            var getEl = function () {
+                              var selector;
+                              if(_.isFunction(info.selector)){
+                                selector = $.proxy(info.selector,me)();
+                              }else if(_.isString(info.selector)){
+                                selector = info.selector;
+                              }else{
+                                return null;
+                              }
+                              if (type === 'jquery') {
+                                return me.$el.find(selector);
+                              } else if (type === 'dom' || type === 'DOM') {
+                                return me.$el.find(selector)[0];
+                              } else {
+                                return $.proxy(me.registry.byId,me)(selector);
+                              }
+                            };
+
+                            if (info.forceCreate) {
+                                return getEl();
+                            }
+
+                            if (!cached || (cached instanceof jQuery &amp;&amp; !cached.length)) {
+                                refCache[ref] = cached = getEl();
+
+                                if (cached &amp;&amp; !info.type) {
+                                    aspect.before(cached, "destroy", function () {
+                                        refCache[ref] = null;
+                                    });
+                                }
+                            }
+
+                            return cached;
+                        }
+                    });
+                });
+
+                // 添加parent属性
+                Object.defineProperty(me.els, 'parent', {
+                  //writable:true,
+                  //enumerable: true,
+                  configurable: true,
+                  get: function () {
+                    return me.getParentViewInstance();
+                  }
+                });
+
+                me.elsGenerated = true;//已经生成过
+            },
+
+            /**
+            * preheat 方法,View首次初始化是调用
+            * @method cPageView.prototype.onCreate
+            opts {
+          }
+          */
+            preheat: function (opts) {
+              //调用子类onCreate
+                var self = this;
+                var opts = opts || {};
+                if (!self.fsm || !self.fsm.can('startPreheating')) {
+                    return false;
+                }
+                self.fsm.startPreheating();
+                if (this.needReplaceTemplate) {/*是否需要替换模版*/
+                    self.$el.html($(self.templateString));
+                    self.parseTempate();
+                    self.$el.addClass('visibility-hidden');
+                    //self.$el.html($(self.templateString)).hide();
+                }
+                /*修改els的getter*/
+                this.generateEls();//no need to wait for elements shown. automatically query
+
+                /**调用view的初始化函数*/
+                this.mapELS &amp;&amp; this.mapELS();
+                /**generate template functions from template*/
+
+                self.prepareEvents &amp;&amp; self.prepareEvents();
+                //self.initVue();
+                self.prepareViewUtils &amp;&amp; self.prepareViewUtils();
+                self.prepareDataHelper &amp;&amp; self.prepareDataHelper();
+                self.delegateViewUtils();//委托viewUtils给父页面
+                self.bindDataHelerViewContext();
+                //self.bindViewUtilsContext();
+                self._listenToModel();
+                self.createElementCollection();
+                this._init();
+                /**调用父类的初始化函数*/
+                this.init &amp;&amp; this.init();
+
+                self.triggerCreateCheck &amp;&amp; self.triggerCreateCheck();
+                if (this.triggerCreate) {
+                  this.onCreate &amp;&amp; this.onCreate();//创建后执行
+                }else{
+                    self.hideLoading();
+                    return false;
+                }
+                self.fsm.finishPreheating();//更新状态机状态
+                if (opts.isPreheat) {//只是预热不要真的执行
+                    return false;
+                } else {
+                    this.show();//
+                }
+            },
+
+            /**
+            绑定数据层的方法至view
+            */
+            bindDataHelerViewContext:function(){
+              var self = this;
+              if(_.isObject(self.dataHelper)){
+                if(_.isObject(self.dataHelper.dataFetcher)){
+                  _.each(_.functions(self.dataHelper.dataFetcher),function(functionName){
+                    self.dataHelper.dataFetcher[functionName] = _.bind(self.dataHelper.dataFetcher[functionName],self);
+                  });
+                }
+                if(_.isObject(self.dataHelper.dataPoster)){
+                  _.each(_.functions(self.dataHelper.dataPoster),function(functionName){
+                    self.dataHelper.dataPoster[functionName] = _.bind(self.dataHelper.dataPoster[functionName],self);
+                  });
+                }
+              }else{
+                return false;
+              }
+            },
+
+            /**
+            绑定viewUtils的方法至view
+            */
+            bindViewUtilsContext:function(){
+              var self = this;
+              if(_.isObject(self.viewUtils)){
+                  _.each(_.functions(self.viewUtils),function(functionName){
+                    self.viewUtils[functionName] = $.proxy(self.viewUtils[functionName],self);
+                  });
+              }else{
+                return false;
+              }
+            },
+
+            /*
+            @description 监听model的事件变化
+            */
+            _listenToModel:function(){
+              var self = this;
+              if(_.isObject(self.viewUtils)){
+                  var eventsMap = {};
+                  _.each(_.functions(self.viewUtils),function(functionName){
+                      eventsMap[functionName] = self.viewUtils[functionName]
+                  });
+                  self.model.on(eventsMap,self);
+              }else{
+                return false;
+              }
+            },
+
+            /**
+             *
+             view render 方法 在非异步解析模版的情况下
+             */
+            renderData: function () {
+                var self = this;
+                self.prepareDataUtil &amp;&amp; self.prepareDataUtil();
+                if (self.isViewDataAsync) {/*是否需要异步解析html模版,异步解析htlm模版需要手动触发dojo的parser*/
+                    self.asyncRender();
+                } else {/*同步解析html模版，先替换模版后通过dojo解析*/
+                    if(self.dataUtil){
+                      $.proxy(self.dataUtil.prepareViewData,self)();
+                    }else{
+                      this._prepareViewData();
+                      this.prepareViewData();
+                    }
+                    this.parse(this.viewData);
+                    this.onRender &amp;&amp; this.onRender();
+                    self.dojoParse();
+                    /*listen for event. wont do it instantly in aync mode*/
+                    /*
+                     if (self.isH5) {
+                     this.startup();
+                     } else {
+                     self.dojoParse();
+
+                     }
+                     */
+                }
+            },
+
+            /**
+             需要异步请求数据来解析替换模版*/
+            asyncRender: function () {
+                var self = this;
+                ///*
+                if (!self.fsm.can('startAsyncRendering')) {
+                    return false;
+                }
+                self.fsm.startAsyncRendering();
+                //*/
+                this._prepareViewData();
+                if(self.dataUtil){
+                  $.proxy(self.dataUtil.prepareViewData,self)();
+                }else{
+                  this.prepareViewData();
+                }
+            },
+
+            _onHide:function(){
+              var self = this;
+              Kai.hideConfirm();
+              //Kai.hideErrorTip();
+            },
+
+            /**
+             * view 销毁方法
+             */
+            destroy: function (opts) {
+                var self = this;
+                self.sendViewLifecyle('destroy');
+                self.showLoading();//关闭 显示loading效果
+                try {
+                    self.destroyDijitWidget(opts);//dojo dijit destroy $el
+                } catch (e) {
+                    console.error(e);
+                }
+                self.destroyDialogs &amp;&amp; self.destroyDialogs();
+                Kai.viewStates.get(self.viewName).set('current',null);
+                self._onHide &amp;&amp; self._onHide();
+                self.onHide &amp;&amp; self.onHide();//执行被隐藏
+                self.$el &amp;&amp; self.$el.remove();//remove $el
+                if(self.model){
+                  self.model.off();
+                  self.model.clear();
+                  self.model.destroy();
+                }
+                self.vm &amp;&amp; self.vm.$destroy();
+                self.abortRequets &amp;&amp; self.abortRequets();
+                self._sysModel.destroy();//
+                self.store &amp;&amp; self.store.remove();//
+                self.templateFunctions = [];//
+                self.viewData = {};//
+                Kai.views.remove([self.viewName]);
+                /*从collection中移除该view model*/
+                self.remove();//Removes a view and its el from the DOM, and calls stopListening to remove any bound events that the view has listenTo'd.
+                self.destroySubViews();//destroy all sub views
+                self.fsm &amp;&amp; self.fsm.destroy();
+                self.fsm = null;//优先状态机置空
+                self.unsubscribeTopics &amp;&amp; self.unsubscribeTopics();
+                if (self.onDestroy) {
+                    self.onDestroy();
+                }
+                self.hideLoading();//关闭 隐藏loading效果
+                self.els = null;
+                self.widgetsEls = null;
+                ///*
+                for(var i in self){
+                    //if(self.hasOwnProperty(i)){
+                        self[i] = null;
+                        delete self[i];
+                    //}
+                }
+                //*/
+                self = null;
+            },
+
+            /**
+             * View 显示时调用的方法
+             * @method cPageView.prototype.onShow
+             */
+            _preShow: function () {
+                var self = this;
+                //Kai.hideErrorTip();
+            },
+
+            //检查是否需要刷新页面
+            triggerShowCheck: function () {
+                var self = this;
+                var currentViewConfigData = self.model.get('viewConfigData') || {};//获得当前的view唯一标识
+                var idProperty = 'id';//id属性
+                var currentViewConfigId;
+                if(_.isString(currentViewConfigData.idProperty)){
+                  idProperty = currentViewConfigData.idProperty;
+                  currentViewConfigId = currentViewConfigData[idProperty];//
+                }else{
+                  currentViewConfigId = currentViewConfigData.id;//
+                }
+                /*
+                if(!currentViewConfigId &amp;&amp; !self.constructor.prototype.hasOwnProperty('onVisible')){//TBD &amp;&amp; !self.hasOwnProperty('triggerShowCheck')
+                self.triggerShow = true;
+                return true;//如果并非需要检查重载的页面，且自己没有定义重载检测的方法 则允许重载
+              }
+              */
+                var currentReadonly = currentViewConfigData._readonly;//当前类型
+                var storedViewConfigData = self.parentModel.get(self.viewName) || self.parentStore.get(self.viewName) || {};//withdrawd presaved data
+                var newViewConfigData = self.modelObj || storedViewConfigData || {};//从存储中获得新的viewConfig数据
+                ///*
+                if(!_.isObject(newViewConfigData) || _.isEmpty(newViewConfigData)){//没有关于view的设置
+                  if(self.constructor.prototype.hasOwnProperty('onVisible')){
+                    self.triggerShow = false;
+                    self.onVisible &amp;&amp; self.onVisible();//执行所有子页面的onVisible
+                    self.initSubViews({
+                      isVisibleOnly:true
+                    });
+                    return false;
+                  }else{
+                    self.triggerShow = true;
+                    return true;//如果并非需要检查重载的页面，且自己没有定义重载检测的方法 则允许重载
+                  }
+                }
+                //*/
+                if (newViewConfigData
+                  &amp;&amp; (newViewConfigData[idProperty] == currentViewConfigId)//传递的新的唯一标识
+                  &amp;&amp; (newViewConfigData._readonly == currentReadonly)) {//readonly的状态
+                  if(self.constructor.prototype.hasOwnProperty('onVisible')){
+                    self.triggerShow = false;//批次号没有更新
+                    self.onVisible &amp;&amp; self.onVisible();//执行visible方法
+                    self.initSubViews({
+                      isVisibleOnly:true
+                    });
+                    return false;
+                  }else{
+                    self.triggerShow = true;
+                    return true;//如果并非需要检查重载的页面，且自己没有定义重载检测的方法 则允许重载
+                  }
+                } else {
+                  self.reload();//批次号更新 刷新页面
+                  return true;
+                }
+            },
+
+            //在不刷新页面的情况下，页面重新显示时候调用
+            onVisible:function(){
+              var self = this;
+            },
+
+            /*显示 每次view重新执行*/
+            show: function (args) {
+                var self = this;
+                var parentViewModel = self.getParentViewModel();
+                /*
+                if(parentViewModel &amp;&amp; parentViewModel.get('readonly')){
+                  self.model.set('readonly',parentViewModel.get('readonly'));
+                }
+                */
+                if (!self.fsm.can('startShowing')) {
+                    self.showToast({
+                        text:'页面加载中，请稍候'
+                    });
+                    return false;
+                }
+                this.triggerShow = true;
+                if (!self.isFirstLoad) {
+                    //不是第一次加载才需要检测是否需要重载
+                    this.triggerShowCheck();//if not reload require check triggerShow
+                }
+                if (!this.triggerShow) {
+                    //self.hideLoading();
+                    self.sendViewLifecyle('show');
+                    return false;//no need to show now
+                }else{
+                }
+                if(parentViewModel &amp;&amp; parentViewModel.get('readonly')){
+                  self.model.set('readonly',parentViewModel.get('readonly'));
+                }
+                if (!self.fsm.can('startShowing')) {
+                    self.showToast({
+                        text:'页面加载中，请稍候'
+                    });
+                    return false;
+                }
+                self.fsm.startShowing();
+                //self._sysModel.set('viewDataParsed', false);
+                self.fsm.finishShowing();
+
+                if (self.isNeedReparse) {
+                    self.renderData();
+                } else {
+                    self.startup();
+                }
+                //self.parsed = false;
+                //self.log(self.viewName + ' shown')
+            },
+
+            destroyDijitWidgetByNode: function (nodeContainer,opts) {
+                var self = this;
+                var opts = opts || {};
+                var childrenDijitNodes = $(nodeContainer).find('[widgetid]');//找到所有包含的
+                for (var i = childrenDijitNodes.length - 1; i >= 0; i--) {
+                    var dijitWidget = _registry.byNode(childrenDijitNodes[i]);
+                    dijitWidget &amp;&amp; dijitWidget.destroyRecursive();
+                }
+                if(opts.keepContainer){
+
+                }else{
+                  if(nodeContainer.remove){
+                    nodeContainer.remove();//节点删除
+                  }else{//ie中不支持remove方法
+                    try{
+                      nodeContainer.removeNode(true)
+                    }catch(e){
+                      console.error(e);
+                    }
+                  }
+                }
+            },
+
+            /*
+             删除dijit对象
+             **/
+            destroyDijitWidget: function (opts) {
+                var self = this;
+                var opts = opts || {};
+                if(!self.registry){
+                  return false;
+                }
+                var widget = self.registry.byId(self.viewName) || (self.parentRegistry &amp;&amp; self.parentRegistry.byId(self.viewName)) || _registry.byId(self.viewName);
+                var dialogIds = opts.dialogIds || self.dialogIds;
+                //widget &amp;&amp; widget.destroy();
+                var childrenDijitWidgets = widget &amp;&amp; widget.getChildren();
+                _.each(childrenDijitWidgets, function (childDijitWidget) {
+                    childDijitWidget.destroyRecursive();
+                });
+                var childrenDijitNodes = self.$el.find('[widgetid]');
+                for (var i = childrenDijitNodes.length - 1; i >= 0; i--) {
+                    var dijitWidget = _registry.byNode(childrenDijitNodes[i]);
+                    dijitWidget &amp;&amp; dijitWidget.destroyRecursive();
+                }
+                _.each(dialogIds, function (id) {
+                    self.registry.byId(id) &amp;&amp; self.registry.byId(id).destroyRecursive();
+                });
+                try {
+                    widget &amp;&amp; widget.uninitialize() &amp;&amp; widget.destroyRendering();
+                    //widget &amp;&amp; widget.destroyRecursive()
+                } catch (e) {
+                    console.error(e);
+                }
+            },
+
+            /*
+             重新加载
+             模版重新生成 dijit控件重新生成
+             initialize将被重新执行
+             @example self.reload({
+             modelObj:{}
+           });
+             */
+            reload: function (opts) {
+                var self = this;
+                var opts = opts || {};
+                self.showLoading();//重载 显示loading效果
+                self.onHide &amp;&amp; self.onHide();
+                _.isObject(self.model) &amp;&amp; self.model.stopListening();
+                self.store &amp;&amp; self.store.remove();
+                self.model &amp;&amp; self.model.off();
+                self.vm &amp;&amp; self.vm.$destroy();
+                self.model &amp;&amp; self.model.clear();//清空model的值
+                //self._sysModel.off();
+                self.fsm &amp;&amp; self.fsm.reload();
+                self.isReload = true;//页面销毁重建
+                self.needReplaceTemplate = true;
+                self.templateFunctions = [];
+                self.destroyDijitWidget(opts);//删除dijit控件
+                try{
+                  self.destroySubViews();//删除子页面 重新建立子页面
+                }catch(e){
+                  console.error(e);
+                }
+                self.unsubscribeTopics &amp;&amp; self.unsubscribeTopics();
+                self.destroyGrids();//销毁表单控件
+                if (self.onReload) {
+                    self.onReload();//重新加载的回调
+                }
+                if(opts.modelObj){
+                  self.modelObj = opts.modelObj;//接受modelObj参数
+                }
+                self.preheat();//重新引用模版并解析
+                self.hideLoading();//重载 隐藏loading效果
+            },
+
+            destroyGrids:function(){
+              var self = this;
+              if(self.grid){
+                self.grid &amp;&amp; self.grid.destroy();
+                self.grid = null;
+              }
+            },
+
+            /*dojo已经解析完成控件，开始执行onShow方法*/
+            startup: function () {
+                var self = this;
+                var StackStore = CommonStore.StackStore.getInstance();//纪录view历史
+                /**map elements from template html*/
+                //self.initVue();//初始化vuejs TBD changed by xiangyun 初始化vuejs的生命周期
+                self.fsm &amp;&amp; self.fsm.startStartuping();
+                self.log(self.viewName + ' begin startup');
+                if(self.isFirstLoad){//startup 中显示loading效果
+                  self.showLoading();
+                }
+                if (!self.isEmbeded) {/*如果不是嵌入式页面，需要隐藏其他view*/
+                    $('[data-subview_port_id^=sub_viewport_]').not(this.$el).hide();
+                    /*hide other sub viewport*/
+                }
+
+                self.pinTitle();
+                /**显示头部*/
+                if (!self.isFirstLoad) {
+                    this.reInit();
+                    /**重新初始化*/
+                    this.log(self.viewName + ' is reInited', {});
+                }
+                this.preShow &amp;&amp; this.preShow();
+                /**在onShow之前执行的方法*/
+
+                if (document.activeElement) {
+                    //document.activeElement.blur();
+                }
+                //生成头部
+                //this._createHeader();
+                //调用子类onShow方法
+                if (!this.switchByOut) {
+                    this.$el.show();
+                }
+                StackStore.setAttr('lastView', this.viewName);
+                StackStore.setAttr('currentView', this.viewName);
+                this.$el.show();
+                /*修改els的getter*/
+                //self.generateEls();
+                this.refCache = {};
+
+                self.createTemplateFunctions &amp;&amp; self.createTemplateFunctions();
+                this.mapELS &amp;&amp; this.mapELS();
+                this.log(self.viewName + ' finished mapELS');
+                /**映射在onShow中可能使用到的元素*/
+                this.reloadFromStore();
+                this.sendMDTrack();//发送麻袋理财的统计
+                try{
+                    if (this.triggerShow &amp;&amp; this.onShow) {
+                        this.onShow &amp;&amp; this.onShow();//调用onShow方法
+                        self.sendViewLifecyle('show');
+                    }
+                }catch(e){
+                    console.error(e);
+                    self.hideLoading();
+                }
+                this.updateELS();
+                this.log(self.viewName + ' finished updateELS');
+                this.updateView();
+                this.log(self.viewName + ' finished updateView');
+
+                /**在onshow之后绑定事件，在页面的生命周期只会绑定一次*/
+                /*订阅*/
+                /*绑定事件*/
+                //_.defer(function(){
+                try{
+                    if (self.isFirstLoad) {
+                        if (self.event) {
+                            self.enableEvents();
+                        } else {
+                            self.bindEvents();
+                            self.subscribeTopics();
+                        }
+                        self.log(self.viewName + ' events prepared');
+                    }
+                }catch(e){
+                    self.hideLoading();
+                    console.error(e);
+                }
+                //});
+                if(self.isFirstLoad){//startup 中隐藏loading效果
+                  this.hideLoading();
+                }
+                self.$el.removeClass('visibility-hidden');
+                if (Kai.isH5) {
+                    this.beautifyView();
+                } else {
+
+                }
+
+                if (this.afterShow) {
+                    this.afterShowDefer = this.afterShow();
+                }
+
+                if (this.onBottomPull) {
+                    this._onWidnowScroll = $.proxy(this.onWidnowScroll, this);
+                    this.addScrollListener();
+                }
+
+                if (this.scrollZero) {//回到页面顶端
+                    window.scrollTo(0, 0);
+                }
+
+                this.triggerShow = true;
+                this.triggerHide = true;
+
+                //如果定义了addScrollListener,说明要监听滚动条事,此方法在cListView中实现
+                if (this.addScrollListener) {//监听滚动事件
+                    this.addScrollListener();
+                }
+
+                //init sub views
+                if(this.afterShowDefer &amp;&amp; this.afterShowDefer.then){//aftershow return a defer object
+                  this.afterShowDefer.then(function(){//aftershow方法之前需要监听afterShowDefer对象
+                    self.initSubViews({//当afterShow返回defer对象的时候
+                      isReload:self.isReload
+                    });
+                  },function(){
+                    console.log('failed to finish aftershow ',self.viewName);
+                  });
+                }else{
+                  _.defer(function () {
+                    self.initSubViews({//当不需要等待after
+                      isReload:self.isReload
+                    });
+                  }
+                );
+                }
+                topic.publish(self.viewName, {startuped: true});
+                self.resizeParentView();
+                self.fsm &amp;&amp; self.fsm.finishStartuping();
+                this.log(self.viewName + ' finished loading');
+                self._onLoaded();
+            },
+
+            _onLoaded: function () {
+                var self = this;
+                self.isFirstLoad = false;
+                if(_.isArray(self.onLoadCallbacks) &amp;&amp; !_.isEmpty(self.onLoadCallbacks)){
+                    _.each(self.onLoadCallbacks,function(onLoadCallback){
+                        $.proxy(onLoadCallback,self)();
+                    });
+                    self.onLoadCallbacks.length = 0;
+                }
+                self.$el.data('viewstate',self.fsm.current);
+                self.$el.addClass('viewLoaded');
+                self.$el.addClass(self.getViewContextPostfix(self.viewName));//添加可以给样式定义使用的clas
+                topic.publish(self.viewName, {loaded: true});
+                Kai.viewStates.get(self.viewName).set('current','loaded');//现在只有一个状态 loaded
+                Kai.viewStates.get(self.viewName).unset('current',{silent:true});
+                if(self.registry.byId(self.viewName)){
+                    self.registry.byId(self.viewName).resize &amp;&amp; self.registry.byId(self.viewName).resize();
+                }
+                var parentRegistry = self.getParentViewInstance() &amp;&amp; self.getParentViewInstance().registry;//设置父亲注册表
+                if(parentRegistry &amp;&amp; parentRegistry.byId(self.viewName)){
+                    parentRegistry.byId(self.viewName).resize &amp;&amp; parentRegistry.byId(self.viewName).resize();
+                }
+                var viewConfigData = self.model.get('viewConfigData') || {};
+                if(_.isObject(viewConfigData) &amp;&amp; (viewConfigData._readonly == true || viewConfigData.readonly == true)){
+                    self.setReadonly({
+                      selfIncluded:true
+                    });//页面设置只读属性
+                }
+                self.onLoaded &amp;&amp; self.onLoaded();
+                //deferred.resolve(self.viewName);
+            },
+
+            /**
+             * View 隐藏
+             * @method cPageView.prototype.onHide
+             */
+            hide: function () {
+                var self = this;
+                //取消web_view_did_appear 事件的注册
+                //Guider.unregisterAppearEvent();
+                //调用子类onHide方法
+                if (this.triggerHide &amp;&amp; this.onHide) {
+                    $('#pop-success').remove();
+                    $("#pop_prompt").remove();
+                    this.onHide();
+                    this._onHide();
+                    self.log(self.viewName + ' is hidden');
+                }
+                if (this.removeScrollListener) {
+                    this.removeScrollListener();
+                }
+                //if(!this.isEmbeded){
+                //this.$el.hide();
+                //}
+                if (this.isConfirmShown) {
+                    this.hideConfirm()
+                }
+            },
+
+            /**
+             * View 从Native 回来，重新获取焦点时调用，此方法只在hybrid可用
+             * @param {String} data 再次唤醒事由Native传来的参数
+             */
+            onAppear: function (data) {
+                this.log('onAppear --------------');
+            },
+
+            onAppearHandler: function (param) {
+                clearTimeout(this.__appeartimeout);
+                if (param &amp;&amp; param.callbackString) {
+                    this.sendUbt();
+                }
+                this.onAppear(param);
+            },
+
+            /**
+             * 跨频道跳转,建议使用cross代替代替
+             * @deprecated
+             * @method View.cPageView.jump
+             * @param {String|JSON} opt
+             */
+            jump: function (opt) {
+                if (_.isString(opt)) {
+                    window.location.href = opt;
+                } else {
+                    Kai.jump(opt);
+                }
+            },
+            /**
+             * @see Kai.jump
+             * @deprecated
+             */
+            cross: function (url, opt) {
+                Kai.jump(url, opt);
+            },
+            /**
+             * @see Kai.goTo
+             * @deprecated
+             */
+            forward: function (url, opt) {
+                Kai.forward.apply(null, arguments);
+            },
+            /**
+             * @see Kai.goBack
+             * @deprecated
+             */
+            back: function (url, opt) {
+                Kai.back.apply(null, arguments);
+                $(window).off("scroll");
+            },
+
+            /**
+             * 刷新页面,空函数
+             */
+            refresh: function () {
+                var hashIndex = location.href.indexOf('#');
+                var reloadUrl = location.href.substring(0, hashIndex);
+                window.location.href = reloadUrl;
+            },
+            /**
+             * 唤醒App,要求返回一个app接受的字符串
+             * @return {String} url
+             */
+            getAppUrl: function () {
+                return "";
+            },
+
+            /**
+             * 返回URL中参数的值
+             * @see Kai.P
+             * @deprecated
+             */
+            /*getQuery     : function (key) {
+             return Kai.P(key);
+             },*/
+            /**
+             * 保存滚动条位置
+             */
+            saveScrollPos: function () {
+                this.scrollPos = {
+                    x: window.scrollX,
+                    y: window.scrollY
+                };
+            },
+
+            /**
+             * 恢复原滚动条位置
+             */
+             restoreScrollPos: function () {
+               window.scrollTo(this.scrollPos.x, this.scrollPos.y);
+             },
+             /**
+             * 显示提示框
+             * @method Lizard.showMessage
+             * @param {string|object} params 字符串的话，只设置内容
+             * @param {object} params.datamodel 弹出框表现层数据结构
+             * @param {string} params.datamodel.content 显示内容
+             * @param {string} [params.datamodel.title] 标题文本
+             * @param {array} [params.datamodel.btns] 按钮文本，可以多个按钮
+             * @param {function} [params.okAction] 按钮回调函数
+             * @example
+             * Lizard.showMessage('内容')
+             *
+             * Lizard.showMessage({
+             *   datamodel: {
+             *     content："显示信息"，
+             *     title："带标题",
+             *     btns: [
+             *       { name: '知道', className: 'cui-btns-ok' },
+             *       { name: '取消', className: 'cui-btns-cancel' }
+             *     ]
+             *   },
+             *   okAction:function(){
+             *     // ok回调
+             *     this.hide();
+             *   },
+             *   cancleAction: function() {
+             *     // cancanle回调
+             *   }
+             * });
+             *
+             * Lizard.showMessage({
+             *   datamodel: {},
+             *   onHide: function() { //隐藏的时候触发
+             *
+             *   }
+             * })
+             */
+             showMessage: function (params) {
+               if (!params) {
+                 params = {};
+               }
+               if (typeof params == 'string') {
+                 params = {
+                   datamodel: {
+                     content: params
+                   }
+                 };
+               }
+
+               //每次需要重置属性，以防组件互相影响
+               this._alert.resetDefaultProperty();
+               this._alert.setOption(params);
+               this._alert.refresh();
+               this._alert.show();
+             },
+
+             /**
+             * 隐藏由showMessage弹出的消息
+             * @method Lizard.hideMessage
+             */
+             hideMessage: function () {
+               this._alert.hide();
+             },
+             /**
+             * 显示确认框
+             * @param {string|Object} param 需要弹出的信息
+             * @method Lizard.showConfirm
+             * @see Lizard.showMessage
+             */
+             showConfirm: function (params) {
+               if (!params) {
+                 params = {};
+               }
+               if (typeof params == 'string') {
+                 params = {
+                   datamodel: {
+                     content: params
+                   }
+                 };
+               }
+
+               this._confirm.resetDefaultProperty();
+
+               //与showMessage不一样的地方
+               this._confirm.datamodel.btns = [
+                 { name: '取消', className: 'cui-btns-cancel' },
+                 { name: '确定', className: 'cui-btns-ok' }
+               ];
+               this._confirm.setOption(params);
+               this._confirm.refresh();
+               this._confirm.show();
+             },
+
+             /**
+             * 隐藏确认框
+             * @method Lizard.hideConfirm
+             */
+             hideConfirm: function () {
+               this._confirm.hide();
+             },
+            /**
+             * @see Kai.showWarning404
+             * @deprecated
+             */
+            showWarning404: function (params) {
+                Kai.showWarning404(params);
+            },
+
+            /**
+             * @see Kai.hideWarning404
+             * @deprecated
+             */
+            hideWarning404: function () {
+                Kai.hideWarning404();
+            },
+
+            /**
+            * @see Kai.showToast
+            * @deprecated
+            */
+            showErrorTip:function(params){
+              var self = this;
+              if(self.tipInstance){
+                self.tipInstance.setOption({
+                  datamodel:{
+                    data:params
+                  },
+                  wrapper:self.$el
+                });
+                self.tipInstance.refresh();
+              }else{
+                self.tipInstance = new Tip({
+                  datamodel:{
+                    data:params
+                  }
+                });
+              }
+              self.tipInstance.show();
+            },
+
+            /**
+             * @see Kai.showToast
+             * @deprecated
+             */
+            showToast: function (params) {
+                //Kai.showToast(params);
+                var self = this;
+                self.hideLoading();//hideLoading before show toast
+                var text = params.text;
+                var stateStyle = params.stateStyle;
+                var closeTime = params.closeTime || 1000;
+                var callback = params.callback || _.noop;//桥接模式
+                var promptpopInstance = new promptpop({});
+                promptpopInstance.display({
+                    'text': '' + text,//显示内容
+                    'textClass': 'popTextColor',//添加的类
+                    'closeTime': closeTime,//关闭时间
+                    'callback': callback,//隐藏toast时的回调函数 回调中需要做的事情
+                    'stateStyle': stateStyle//TBD necessary?
+                });
+            },
+            /**
+             * @see Kai.hideToast
+             * @deprecated
+             */
+            hideToast: function () {
+                Kai.hideToast();
+            },
+
+            /**
+             * @see Kai.showLog
+             * @deprecated
+             */
+            showLog: function (params) {
+                Kai.showLog(params);
+                this.isLoadingShown = true;
+                this.__isLoading__ = true;
+            },
+
+            /**
+             * @see Kai.showLoading
+             * @deprecated
+             */
+            showLoading: function (params) {
+              var self = this;
+                //Kai.showLoading(params);
+                //        this.loading.firer = this;
+                /*
+                if ($('.loading').length > 0) {
+                    $('.loading').show();
+                    $('.loading-shade').show();
+                } else {
+                    var loadingInstance = new loading({});
+                    loadingInstance.display();
+                }
+                */
+                Kai.showLoading(_.extend({
+                  view:self
+                },params));
+                this.isLoadingShown = true;
+                this.__isLoading__ = true;
+            },
+
+            /**
+             * @see Kai.showLoading
+             * @hideLoading
+             */
+            hideLoading: function (opener) {
+                //        if (!this.loading.firer || this.loading.firer == this)
+                //Kai.hideLoading(opener);
+                /*
+                if ($('.cui_loading').length > 0) {
+                  $('.cui_loading').hide();
+                } else {
+
+                }
+                */
+                var view = this;
+                Kai.hideLoading();
+                Kai.hideLoading(view);
+                this.isLoadingShown = false;
+                this.__isLoading__ = false;
+            },
+
+            /**
+             * 设置html的title
+             * @param {string} title
+             */
+            setTitle: function (title) {
+                document.title = title;
+            },
+
+            /**
+             * @see Kai.sendUbt
+             */
+            sendUbt: function (view,sendData,opts) {
+                Kai.sendUbt(view,sendData,opts);
+            },
+
+            /*
+             backbone method.生成templateString
+             */
+            template: function () {
+                _.template(this.templateString)
+            },
+
+            /*
+            */
+            render: function() {
+              //this.$el.html(this.template(this.viewData));
+              return this;
+            },
+
+            /*
+            A hash of attributes that will be set as HTML DOM element attributes on the view's el (id, class, data-properties, etc.), or a function that returns such a hash.
+            */
+            attributes:{
+
+            },
+            /*
+             * 重写 Backbone 的 delegateEvents
+             *
+             * 让 events 属性，默认可以继承父类的events，而不是覆盖
+             *
+             * 如果不这样做，又想继承父类的 events 的话，只能把events都写成函数，然后
+             *    events: function () {
+             *        return util.extendDeep(this.constructor.__super__.events(), {});
+             *    }
+             *    @name BaseView.delegateEvents
+             */
+            /*
+             delegateEvents: function () {
+             var thisEvents = this.events;
+             var parentEvents = this.constructor.__super__.events;
+             if (parentEvents &amp;&amp; thisEvents !== parentEvents) {
+             thisEvents = _.isFunction(thisEvents) ? thisEvents.call(this) : thisEvents;
+             parentEvents = _.isFunction(parentEvents) ? parentEvents.call(this) : parentEvents;
+             this.events = _.extend({}, parentEvents, thisEvents);
+             }
+             // 调用 Backbone 的 delegateEvents
+             Backbone.View.prototype.delegateEvents.apply(this, this.events);
+             // return this.super.delegateEvents.apply(this, arguments);
+             },
+             */
+
+            /*显示地步加载图标*/
+            showBottomLoading: function () {
+                if (!this.bottomLoading) {
+                    this.bottomLoading = $('&lt;div class="cui-zl-load" id="zlLoading"> &lt;div class="cui-i cui-b-loading">&lt;/div>&lt;div class="cui-i  cui-mb-logo">&lt;/div> &lt;p>加载中&lt;/p>&lt;/div>');
+                    this.els.listcontainer.append(this.bottomLoading);
+                }
+                this.bottomLoading.show();
+            },
+
+            /*隐藏页面底部加载图标*/
+            hideBottomLoading: function () {
+                if (this.bottomLoading) {
+                    this.els.listcontainer.find("#zlLoading").remove();
+                    this.bottomLoading = null;
+                }
+            },
+
+            /*设置pageid*/
+            setPageId: function (_pagename) {
+                var viewName = this.viewname;
+                if (_pagename) {
+                    viewName = _pagename;
+                }
+                var _ref;
+                if (viewName &amp;&amp; (_ref = pageIdConfig[viewName])) {
+                    this.pageid = _ref[0];
+                    this.hpageid = _ref[1];
+                }
+            },
+
+            /*设置头部 h5/pc TBD*/
+            pinTitle: function (title) {
+                var self = this;
+                if (typeof title == 'string') {//如果是string
+                    document.title = title;
+                } else {
+                    var newTitle = this.title || this.getTitle();
+                    if (newTitle &amp;&amp; _.isString(newTitle)) {
+                        document.title = newTitle;
+                    }
+                }
+
+                /*解决微信中不显示title的bug*/
+                if (Kai.isH5) {
+                    var $iframe = $('&lt;iframe src="' + './app/' + Kai.projectName +'/favicon.ico"' + ' style="display:none">&lt;/iframe>');
+                    $iframe.on('load', function () {
+                        setTimeout(function () {
+                            $iframe.off('load').remove();
+                        }, 0);
+                    }).appendTo($('body'));
+                }
+            },
+
+            /*
+             测试数据 **/
+            debugData: {},
+
+            /**
+             所有的elements的映射*/
+            els: {},
+
+            /**
+             模版函数的集合
+             */
+            templateFunctions: [],
+
+            /**
+             重新解析模版,默认使用viewData对象解析*/
+            reparse: function (data, opts) {
+                var self = this;
+                /*
+                 if(!self.fsm.can('reparse')){
+                 return false;
+                 }
+                 */
+                //self.fsm.reparse();
+                var data = data || self.viewData;
+                /*如果没有传入参数，使用viewData解析*/
+                if (!_.object(data)) {//未传入数据
+                    throw new Error('viewData is not valid');
+                    return false;
+                    /*直接返回*/
+                }
+                if (opts &amp;&amp; opts.templateFunctionId) {/*传入特定的函数id，重新解析特定的id 只能onShow中直接调用执行*/
+                    var targetFunction = _.findWhere(self.templateFunctions, {templateFunctionId: opts.templateFunctionId});
+                    self._parse(targetFunction, data, opts);
+                } else {/*模版全部重新解析,获取所有的模版函数重新生成DOM，需要的话dojo解析*/
+                    self.fsm &amp;&amp; self.fsm.startParsing();
+                    _.each(self.templateFunctions, function (tplFun, index, list) {
+                        try {
+                            if (!tplFun['avoidReparse']) {
+                                self._parse(tplFun, data, opts);//此时不改变生命周期，因此函数在parse中也不改变生命周期函数
+                            } else {
+
+                            }
+                        } catch (e) {
+                            self.log(e);
+                            console.error(e);
+                        }
+                    });
+                    self.fsm &amp;&amp; self.fsm.finishParsing();
+                    self.fsm &amp;&amp; self.fsm.startDojoParsing();
+                    self.fsm &amp;&amp; self.fsm.finishDojoParsing();
+                    self.fsm &amp;&amp; self.startup();
+                    /*
+                     self.fsm.startStartuping();
+                     self.fsm.finishStartuping();
+                     */
+                    self.log(self.viewName + ' page is reParsed');
+                }
+            },
+
+            /**
+            通知dojo解析页面
+            */
+            requireDojoParse: function () {
+                var self = this;
+                /*data ready. let dojo parse*/
+                _.defer(function () {
+                    self.log(self.viewName + ' is viewDataParsed and turned on');
+                    self._sysModel &amp;&amp; self._sysModel.unset('viewDataParsed', {silent: true});
+                    self._sysModel &amp;&amp; self._sysModel.set('viewDataParsed', true);
+                });
+            },
+
+            //系统级别的viewData
+            getSystemLevelViewData:function(){
+              var self = this;
+              return {
+                __viewName:self.viewName
+              }//增加系统参数
+            },
+
+            /**通过viewData解析模版 underscorejs template &lt;%=%> grammer
+            @param tplFun可能是数据
+            */
+            _parse: function (tplFun, data, opts) {
+                var self = this;
+                var data = data || {};
+                var opts = opts || {};
+
+                if(!self.$el){
+                    return false;
+                }
+                /*通过函数解析，函数中存在需要放置的位置*/
+                if (typeof tplFun == 'function' || _.isString(tplFun)) {
+                    var tplFun = _.isString(tplFun) ? (_.findWhere(self.templateFunctions, {templateFunctionId: tplFun})) : tplFun;
+                    _.extend(data,self.getSystemLevelViewData());
+                    var htmlString = tplFun(data);
+                    var updatedNode = $(htmlString);
+
+                    if (tplFun.k_widgetid) {/*重新解析script标签，已经拥有k_widgetid属性*/
+                        var k_widgetid = tplFun.k_widgetid;
+                        var oldWidgetNodes = $('[k_widgetid="' + k_widgetid + '"]');//find in body level to fix dialog content
+                        /*重新寻找k_widgetid*/
+                        if (oldWidgetNodes &amp;&amp; oldWidgetNodes.length > 0) {
+                            var widgetNodesFirstChild = oldWidgetNodes.first();
+                            var widgetHooker = $('&lt;script class= ' + k_widgetid + '>&lt;/script>').insertBefore(widgetNodesFirstChild);
+                            if (_.isString(tplFun.dojoId)) {/*destroy the old dijit widget*/
+                                self.registry.byId(tplFun.dojoId) &amp;&amp; self.registry.byId(tplFun.dojoId).destroyRecursive();
+                                opts.needDojoParse = true;
+                            }
+                            if(tplFun.widgetInTemplate){
+                              _.each(oldWidgetNodes,function(oldWidgetNode){
+                                self.destroyDijitWidgetByNode(oldWidgetNode,{
+                                  keepContainer:true
+                                });
+                              });
+                              opts.needDojoParse = true;
+                            }
+                            var updatedNode = $(htmlString);
+                            updatedNode.attr('k_widgetid', k_widgetid);
+                            /**重新赋予k_widgetid*/
+                            if (opts.keepOld) {
+
+                            } else {
+                                if (tplFun.$container || (tplFun.$el &amp;&amp; tplFun.$el.length > 0)) {
+                                    (tplFun.$container || tplFun.$el).empty();
+                                } else {
+                                    oldWidgetNodes.remove();
+                                }
+                                /*TBD need to remove the existing nodes?*/
+                            }
+
+                            if (opts.parentDomNode || ( tplFun.$container &amp;&amp; tplFun.$container.length > 0)
+                            || (tplFun.$el &amp;&amp; tplFun.$el.length > 0)) {/**存在父亲节点*/
+                                if (opts &amp;&amp; opts.clear == true) {
+                                    /**清空已经存在container里面的东西*/
+                                    (tplFun.$container || tplFun.$el).empty();
+                                } else {
+
+                                }
+                                (opts.parentDomNode || tplFun.$container || tplFun.$el).append(updatedNode);
+                            } else {
+                                widgetHooker.replaceWith(updatedNode);
+                                //oldWidgetNodes.last().append(updatedNode);
+                                if (updatedNode.hasClass('widget_container')) {/*容器节点，真正的内容是children*/
+                                    updatedNode.children().show();
+                                }
+                            }
+
+                            widgetHooker &amp;&amp; widgetHooker.remove();
+                            /**remove the hooker node*/
+
+                            if (opts &amp;&amp; opts.needDojoParse) {
+                                var newAddedNodes = $('[k_widgetid="' + k_widgetid + '"]');//找到新添加节点
+                                _.each(newAddedNodes, function (newAddedNode) {
+                                  if(!newAddedNode || $(newAddedNode).parent('[k_widgetid="' + k_widgetid + '"]').length > 0){
+                                    return false;
+                                  }else{
+                                    self.parser.parse(newAddedNode).then(opts.callback);
+                                    //self.dijitParse(newAddedNode).then(opts.callback);
+                                  }
+                                });
+                            }
+                            if (opts &amp;&amp; opts.clear) {
+                                //widgetNodes.remove(); /*TBD need to remove the existing nodes?*/
+                            }
+                            if (tplFun.eventBinder) {//如果存在事件绑定处理函数
+                                self.elementCollection.add({
+                                    eventBinder: tplFun.eventBinder
+                                });
+                            }
+                            tplFun.initialized = true;
+                        }
+                    }  /*初次解析script标签,没有k_widgetid属性*/
+                    else if (tplFun.$el &amp;&amp; !tplFun.k_widgetid || !tplFun.initialized) {
+                        if (tplFun.$el &amp;&amp; (_.isElement(tplFun.$el) || _.isArray(tplFun.$el))) {
+
+                        } else if (_.isString(tplFun.$el)) {
+                            tplFun.$el = self.$el.find(tplFun.$el);
+                            /*根据selector寻找插入节点*/
+                        } else {
+
+                        }
+                        if (tplFun.$el &amp;&amp; !opts.keepOld) {
+                            tplFun.$el.empty();
+                            tplFun.$el.append(updatedNode);
+                            /*插入新节点*/
+                        } else {
+                            tplFun.$el.append(updatedNode);
+                            /*没有插入节点的情况下，直接添加到view节点的最后*/
+                        }
+                        if (tplFun.dojoId) {
+                            /*指定dojo id，删除重建*/
+                            self.registry.byId(tplFun.dojoId) &amp;&amp; self.registry.byId(tplFun.dojoId).destroyRecursive();
+                            self.parser.parse(updatedNode[0]).then(opts &amp;&amp; opts.callback);
+                            //self.dijitParse(updatedNode[0]).then(opts &amp;&amp; opts.callback);
+                        }
+                        if(tplFun.widgetInTemplate){
+
+                        }
+                        if (tplFun.k_widgetid) {
+
+                        } else {/*如果没有添加到this.templateFunctions，将新模版函数插入其中*/
+                            self.templateFunctions = self.templateFunctions || [];
+                            var uniqueString = _.uniqueId((new Date()).valueOf());
+                            updatedNode.attr('k_widgetid', uniqueString);
+                            tplFun.k_widgetid = uniqueString;
+                            tplFun.initialized = true;
+                            self.templateFunctions.push(tplFun);
+                        }
+                        if (tplFun.eventBinder) {
+                            self.elementCollection.add({
+                                eventBinder: tplFun.eventBinder
+                            });
+                        }
+                        tplFun.initialized = true;
+                    }
+                }
+                /*通过viewdata解析模版*/
+                //} else if (typeof tplFun == 'object' &amp;&amp; !_.isEmpty(tplFun) || !_.isEmpty(self.viewData)) {
+                //修复当viewData是为｛｝时候不解析模版的问题
+                else if (typeof tplFun == 'object' || _.isObject(self.viewData)) {
+                  //生成模版函数
+                    var data = tplFun || self.viewData;
+                    _.extend(data,self.getSystemLevelViewData());
+                    self.fsm &amp;&amp; self.fsm.startParsing();
+                    /*传入的是一个对象*/
+                    this.$el.find('.kai_widget,.k_widget').each(function (index, widgetNode) {
+                        (function (widgetNode) {
+                            var widgetNode = widgetNode;
+                            var tplFun = _.template($(widgetNode).html());
+                            /*模板函数*/
+                            var uniqueString = _.uniqueId((new Date()).valueOf());
+                            /*生成唯一字符串*/
+                            tplFun.dojoId = $(widgetNode).data('dojo-id');//该模版所对应的dojo控件
+                            tplFun.widgetInTemplate = $(widgetNode).data('widgetintemplate');
+                            /**内部的dojo部件，在重新解析的时候需要销毁，否则出现重复ID注册错误*/
+                            tplFun.templateFunctionId = $(widgetNode).data('templatefunctionid');
+                            tplFun.parseOnLoad = $(widgetNode).data('parseonload');
+                            tplFun.avoidReparse = $(widgetNode).data('avoidreparse');//不需要重新解析模版
+                            tplFun.avoidDojoReparse = $(widgetNode).data('dojo-avoidreparse');//不需要重新解析dojo插件 TBD
+
+                            tplFun.k_widgetid = uniqueString;
+                            tplFun.eventBinder = $(widgetNode).data('eventbinder');
+                            /*通过唯一时间戳进行关联闭包中的函数和dom节点*/
+                            tplFun.$el = $(widgetNode).data('parent-domselector');//tplFun.$el是父亲节点选择器 companyCheck_contacts_container
+                            if(_.isObject(self.$el) &amp;&amp; self.$el.find(tplFun.$el).length > 0){
+                              tplFun.$el = self.$el.find(tplFun.$el);//TBD global name space is very very bad
+                            }else{
+                              tplFun.$el = $(tplFun.$el);//TBD global name space is very very bad
+                            }
+                            /*通过唯一时间戳进行关联闭包中的函数和dom节点*/
+                            self.templateFunctions.push(tplFun);
+                            /*保存函数到view的模版数组中*/
+                            self.templateFunctions[tplFun.k_widgetid] = tplFun;
+                            if (tplFun.parseOnLoad === false) {/*第一次全局解析的时候不去更新该模版对应的DOM节点*/
+                                tplFun.initialized = true;
+                                if (tplFun.$el &amp;&amp; tplFun.$el.length > 0) {//已经指明父亲节点
+                                    tplFun.$el.attr('k_widgetid', uniqueString);
+                                } else {//未指明父亲节点
+                                    var widgetHooker = $('&lt;script k_widgetid=' + uniqueString + '>&lt;/script>').insertBefore($(widgetNode));
+                                }
+                                $(widgetNode).remove();//删除模版节点
+                            } else {
+                                var htmlString = tplFun(data);
+                                var $el = $(htmlString);
+                                /*tplFun.$el.attr('k_widgetid', uniqueString);
+                                 tplFun.$el.show();
+                                 */
+                                $el.attr('k_widgetid', uniqueString);
+                                $el.show();
+                                if ($el.length == 0) {
+                                    var widgetHooker = $('&lt;script k_widgetid=' + uniqueString + '>&lt;/script>').insertBefore($(widgetNode));
+                                    $(widgetNode).remove();
+                                } else {
+                                    $(widgetNode).replaceWith($el);
+                                }
+                                tplFun.initialized = true;
+                                if (tplFun.eventBinder) {
+                                    self.elementCollection.add({
+                                        eventBinder: tplFun.eventBinder,
+                                        silent:true
+                                    }, {silent: true});//不触发事件绑定函数的调用
+                                }
+                            }
+                        })(widgetNode);
+                    });
+                    self.fsm &amp;&amp; self.fsm.finishParsing();
+                    self.requireDojoParse();
+                }
+            },
+
+            //获得麻袋理财的统计数据
+            getTrackConfig:function(){
+              var self = this;
+              var moduleConfig = module.config();
+              if(_.isObject(moduleConfig)){
+                var trackConfig = moduleConfig.pageConfig.trackConfig;
+                if(_.isObject(trackConfig)){
+                  return trackConfig[self.viewName];
+                }else{
+                  return null;
+                }
+              }else{
+                return '';
+              }
+            },
+
+            /*获得页面头部*/
+            getTitle: function () {
+                var self = this;
+                var title = ''
+                //return appMain &amp;&amp; appMain.pageConfig.pageNameConfig[this.viewName];
+                var moduleConfig = module.config();
+                if(_.isObject(moduleConfig)){
+                  var configTitle = moduleConfig.pageConfig.pageNameConfig[self.viewName];
+                  if(_.isFunction(configTitle)){
+                    configTitle = configTitle();
+                  }
+                  title = configTitle || '';
+                }else{
+                  //return '';
+                }
+                title = title || self.viewItem.viewTitle || '';
+                return title;
+            },
+
+            /*创建模版函数*/
+            createTemplateFunctions: function function_name(argument) {
+                _.noop;
+            },
+
+            /*页面加载时的初始化操作*/
+            _init: function function_name(argument) {
+                var self = this;
+                self.parsed = false;
+                self.isFirstLoad = true;
+                self.templateFunctions = [];
+                if (self.event &amp;&amp; self.event.eventHandler) {
+                    _.each(_.functions(self.event.eventHandler), function (fnName) {
+                        self.event.eventHandler[fnName] = _.bind(self.event.eventHandler[fnName], self);
+                    });
+                }
+                self.listenToModel();
+            },
+
+            /*初次页面加载时执行*/
+            init: function function_name(argument) {
+                var self = this;
+            },
+
+            /**bind events for the view*/
+            bindEvents: function (argument) {
+                var self = this;
+            },
+
+            /*美化页面 H5中被调用*/
+            beautifyView: function (opts) {
+                var self = this;
+                /*el为你添加功能的文本框
+                input添加class no_inputclear避免使用该插件
+                */
+                ///*
+                require([
+                  "ui/inputclear/ui.inputclear"
+                ], function (
+                  InputClear
+                ) {
+                    if (_.isObject(opts) &amp;&amp; opts.container) {
+                        InputClear($(opts.container).find('input').not('.no_inputclear'), null, null, {});
+                    } else {
+                        InputClear(self.$el.find('input').not('.no_inputclear'), null, null, {});
+                    }
+                });
+                //*/
+            },
+
+            /*更新view*/
+            updateView: function () {
+                _.noop;
+            },
+
+            /*在显示前调用*/
+            preShow: function () {
+                _.noop;
+            },
+
+            /*映射节点*/
+            _mapELS: function () {
+                _.noop;
+            },
+
+            /*根据id从store中重新加载值*/
+            reloadFromStore: function () {
+                var self = this;
+                var storeData = self.store.get();
+                if (_.isObject(storeData) &amp;&amp; !_.isEmpty(storeData.memory)) {
+                    self.mapValues(storeData.memory);
+                }
+            },
+
+            //从父亲节点获取自己的配置信息
+            _prepareViewData: function () {
+              var self = this;
+              //var storedData = self.parentStore.getAttr(self.viewName);//withdrawd presaved data
+              var storedData = self.parentModel.get(self.viewName);//withdrawd presaved data from parent
+              var viewConfigData = self.modelObj || storedData || {};
+              if(_.isObject(viewConfigData)){
+                self.model.set('viewConfigData',viewConfigData || {});//更新数据
+                //self.parentStore.removeAttr(self.viewName);//清空硬盘数据
+                self.parentModel.unset(self.viewName);//清空硬盘数据
+              }
+            },
+
+            /**get the viewData before parse the template*/
+            prepareViewData: function () {
+                var self = this;
+                try{
+                  self.turnOn();
+                }catch(e){
+                  console.error(e);
+                }
+            },
+
+            /*设置页面所用的event对象*/
+            prepareEvents: function () {
+                var self = this;
+            },
+
+            /*创建DOM节点集合*/
+            createElementCollection: function () {
+                var self = this;
+                var ElementModel = Backbone.Model.extend({
+                    defaults: {
+                        "selector": "",
+                        "type": "",
+                        "eventBinder": "",
+                        "element": null,
+                        "silent":false
+                    }
+                });
+
+                var ElementCollection = Backbone.Collection.extend({
+                    model: ElementModel
+                });
+
+                var elementCollection = new ElementCollection();
+                self.elementCollection = elementCollection;
+                elementCollection.on('add', function (elementModel) {//if slient:true
+                    //elementModel.get('eventBinderFn').call(self,elementModel.get('element'));
+                    self.event.eventBinder[elementModel.get('eventBinder')].call(self);
+                });
+            },
+
+            /*绑定事件，让页面开始监听事件*/
+            enableEvents: function (element) {
+                var self = this;
+                if(element){
+                  var elementModel = self.elementCollection.findWhere({'element':element});
+                  if(elementModel){
+                    self.event.eventBinder[elementModel.get('eventBinder')].call(self);
+                  }
+                }else{//一次醒初始化
+                  var bindEventFunctionNames = _.functions(self.event.eventBinder);
+                  self.event.els &amp;&amp; self.generateEls(self.event.els);
+                  self.event.eventBinder['bindEvents'] &amp;&amp; $.proxy(self.event.eventBinder['bindEvents'], self)();
+                  self.event.eventBinder['subscribeTopics'] &amp;&amp; $.proxy(self.event.eventBinder['subscribeTopics'], self)();
+                  _.each(self.elementCollection.models, function (elementModel) {//只遍历触发静默绑定的节点
+                    if(elementModel.get('silent') &amp;&amp; !(elementModel.get('enableMode') == 'manual')){//还未触发绑定事件 静默的节点绑定 且 非手动触发
+                      if(_.isFunction(self.event.eventBinder[elementModel.get('eventBinder')])){
+                        self.event.eventBinder[elementModel.get('eventBinder')].call(self);//执行绑定函数
+                      }
+                    }
+                  });
+
+                  /*
+                  _.each(bindEventFunctionNames,function(fnName){
+                  //$.proxy(self.event.eventBinder[fnName],self)();
+                });
+                */
+                }
+            },
+
+            /*更新ELS deprecated*/
+            updateELS: function () {
+                var self = this;
+                _.extend(self.els, {});
+                self.mapELS &amp;&amp; self.mapELS();
+            },
+
+            /*断言 测试该页面的正确性*/
+            assert: function () {
+            },
+
+            /*第一次解析所有的dojo控件*/
+            dojoParse: function () {
+                var self = this;
+                if (self.fsm.can('startDojoParsing')) {//模版处理完毕 需要dojo解析
+                    self.fsm &amp;&amp; self.fsm.startDojoParsing();
+                }else{
+                    return false;
+                }
+                if (!self.parsed) {
+                    self.parser.parse(self.$el[0]).then(function () {
+                        self.parsed = true;//dijit控件只能执行一次
+                        topic.publish(self.viewName, {dojoParsed: true});
+                        self._sysModel.set('dojoParsed', true);
+                        self.log(self.viewName + ' is dojo parsed');
+                        self.fsm.finishDojoParsing();
+                        //_.defer(function(){
+                          self.startup();//解析完毕
+                        //});
+                    },function(e){
+                        console.log(e);
+                        self.fsm.finishDojoParsing();
+                        self.startup();
+                    });
+                } else {
+                    self.fsm &amp;&amp; self.fsm.finishDojoParsing();//已经解析完成 直接跳转
+                    self.startup();
+                }
+            },
+
+            /**
+            设置祖父节点的widget集合
+            */
+            setGrandReistry:function(){
+                var self = this;
+                self.grandRegistry = self.getGrandViewInstance() &amp;&amp; self.getGrandViewInstance().registry;
+            },
+
+            /**
+            设置父亲节点的dijit widget 职责链模式
+            */
+            setParentWidget:function(){
+                var self = this;
+                var parentDijitWidget;
+                var parentViewItem = self.parentViewItem;
+
+                if(self.grandRegistry){//从祖父的注册表中查找
+                     parentDijitWidget = self.grandRegistry.byId(parentViewItem.id);
+                }
+                if(!parentDijitWidget){//仍然没有找到 从父亲的注册表中查找
+                    parentDijitWidget = self.parentRegistry &amp;&amp; self.parentRegistry.byId(parentViewItem.id);
+                }
+                if(!parentDijitWidget){//仍然没有找到 通过原生的注册表中查找
+                    parentDijitWidget = _registry.byId(parentViewItem.id);
+                }
+                self.parentDijitWidget = parentDijitWidget;//设置父亲widget
+            },
+
+            /*对父节点进行resize dojo需要该步骤*/
+            resizeParentView: function () {//TBD
+                var self = this;
+                var parentViewItem = self.parentViewItem;
+                if (parentViewItem &amp;&amp; parentViewItem.id &amp;&amp; !parentViewItem.inaccessible) {
+                   var grandRegistry = self.getGrandViewInstance() &amp;&amp; self.getGrandViewInstance().registry;
+                   if(grandRegistry){
+                    //var parentDijitWidget = grandRegistry.byId(parentViewItem.id);
+                    if (self.parentDijitWidget &amp;&amp; self.parentDijitWidget.resize) {
+                        try{
+                            self.parentDijitWidget &amp;&amp; self.parentDijitWidget.resize();
+                        }catch(e){
+                            console.error(e);
+                        }
+                    }
+                   }else{
+                    return false;
+                   }
+                }
+            },
+
+            //获得祖父节点的名称
+            getGrandViewName:function(){
+                var self = this;
+                var parentViewInstance = self.getParentViewInstance();
+                self.grandViewName = parentViewInstance &amp;&amp; parentViewInstance.parentViewName;
+                return self.grandViewName;
+            },
+
+            //获得祖父节点的实例
+            getGrandViewInstance : function(){
+                var self = this;
+                if(self.grandViewName){
+
+                }else{
+                    self.grandViewName = self.getGrandViewName();
+                }
+                return Kai.views.get(self.grandViewName) &amp;&amp; Kai.views.get(self.grandViewName).get('viewInstance');
+            },
+
+            /**
+            获得父亲节点的名称
+            */
+            getParentViewName: function(){
+                var self = this;
+                var parentViewInstance = self.getParentViewInstance();
+                return parentViewInstance &amp;&amp; parentViewInstance.viewName;
+            },
+
+            /**
+            获得祖父节点的model
+            */
+            getGrandViewModel:function(){
+                var self = this;
+                var grandViewInstance = self.getGrandViewInstance();
+                self.grandViewModel = grandViewInstance &amp;&amp; grandViewInstance.model;
+                return self.grandViewModel;
+            },
+
+            /**
+            获得父亲节点的实例
+            */
+            getParentViewInstance : function(){
+                var self = this;
+                return Kai.views.get(self.parentViewName) &amp;&amp; Kai.views.get(self.parentViewName).get('viewInstance');
+            },
+
+            /**
+            获得邻居节点的实例
+            */
+            getSiblingViewInstance : function(siblingViewName){
+                var self = this;
+                var siblingViewCacheModel = Kai.views.get(self.parentViewName + '/' + siblingViewName);
+                return siblingViewCacheModel &amp;&amp; siblingViewCacheModel.get('viewInstance');
+            },
+
+            /*
+            获得所有邻居节点的实例
+            */
+            getSiblingViewInstances : function(siblingViewName){
+                var self = this;
+                return Kai.views.get(self.parentViewName) &amp;&amp; Kai.views.get(self.parentViewName).get('viewInstance');
+            },
+
+            /**
+            获得父亲的model
+            */
+            getParentViewModel : function(){
+              var self = this;
+              var parentViewInstance = self.getParentViewInstance();
+              var createFakeModel = function(){
+                var ViewModel = Backbone.Model.extend({
+                });
+                return new ViewModel();
+              };
+              if(parentViewInstance){
+                self.parentViewModel = parentViewInstance &amp;&amp; parentViewInstance.model;
+                return self.parentViewModel;
+              }else{//TBD 并不是一致的父model了
+                if(!_.isObject(Kai._fakeParentViewModels)){
+                  Kai._fakeParentViewModels = {
+                  };
+                  return Kai._fakeParentViewModels[self.parentViewName] = createFakeModel();
+                }else{
+                  if(Kai._fakeParentViewModels[self.parentViewName]){
+                    return Kai._fakeParentViewModels[self.parentViewName];
+                  }else{
+                    return Kai._fakeParentViewModels[self.parentViewName] = createFakeModel();
+                  }
+                }
+              }
+            },
+
+            /**
+            获得父亲的store
+            */
+            getParentStore : function(){
+                var self = this;
+                var parentViewName = self.viewItem.parent;
+                var parentViewInstance = self.getParentViewInstance();//
+                if(_.isObject(parentViewInstance)){
+                  return parentViewInstance.store;
+                }else{
+                  _stores['K_view_' + parentViewName] = _stores.CustomStore('K_view_' + parentViewName, Kai.appStoreLifeTime || '1D');//store history
+                  this.parentStore = _stores['K_view_' + parentViewName].getInstance();//create store for this view
+                  return this.parentStore;
+                }
+            },
+
+            /**
+            获得祖父的存储store
+            */
+            getGrandStore:function(){
+              var self = this;
+              var grandViewInstance = self.getGrandViewInstance();
+              return _.isObject(grandViewInstance)?grandViewInstance.store:null;
+            },
+
+            getChildViewWidget : function(childViewName){
+                var self = this;
+                //TBD
+            },
+
+            /**
+            获得子页面的实例
+            */
+            getChildViewInstance:function(childViewName/*shortname or fullName*/){
+              var self = this;
+              var childViewModel = null;
+              if(childViewName.indexOf(self.viewName) &lt; 0){
+                childViewModel = Kai.views.get(self.viewName + '/' + childViewName);
+              }else{
+                childViewModel = Kai.views.get(childViewName);
+              }
+              if(!_.isObject(childViewModel)){
+                return false;
+              }else{
+                return (childViewModel.get('viewInstance')) || null;
+              }
+            },
+
+            /*初始化子view*/
+            initSubViews: function (opts) {/*show default sub views*/
+                var self = this;
+                var opts = opts || {};
+                _.each(this.childViewItems, function (childViewItem) {
+                    if (!childViewItem.inaccessible) {
+                        if (childViewItem.isDefault) {
+                          if(opts.isVisibleOnly){//visible when parent is visible
+                            var childViewInstance = Kai.view.get(childViewItem.id).get('viewInstance');
+                            if(_.isObject(childViewInstance) &amp;&amp; _.isFunction(childViewInstance.onVisible)){
+                              try{
+                                childViewInstance.onVisible();
+                                childViewInstance.initSubViews({
+                                  isVisibleOnly:true
+                                });
+                              }catch(e){//added by xiangyun. 防止单个页面对总流程的影响
+                                console.error(e);
+                              }
+                            }
+                          }else{
+                            _.defer(function(){
+                              Kai.forward(childViewItem.id, {//forward to childView
+                                keepURL: true,
+                                isSubViewInitialize:true,
+                                isReload:opts.isReload || false//是否重新加载
+                              });
+                            });
+                          }
+                        } else {
+                            //Kai.forward(childViewItem.id,{keepURL:true,isPreheat:true});
+                        }
+                    }
+                });
+            },
+
+            /*销毁子view*/
+            destroySubViews: function () {/*show default sub views*/
+                var self = this;
+                _.each(this.childViewItems, function (childViewItem) {
+                    var childViewModel = Kai.views.get({viewName: childViewItem.id});
+                    if (_.isObject(childViewModel)) {
+                        var childViewInstance = childViewModel.get('viewInstance');
+                        childViewInstance &amp;&amp; childViewInstance.destroy();
+                    }
+                });
+            },
+
+            /*show方法中调用，每次页面显示会执行*/
+            _reInit: function () {
+                var self = this;
+                self._sysModel.set('_reInited', true);
+            },
+
+            /*show方法中调用，每次页面显示会执行*/
+            reInit: function () {
+                var self = this;
+                self._sysModel.set('reInited', true);
+            },
+
+            /*使用viewdata对页面html解析完毕
+             页面html解析成功 触发dojo解析页面*/
+            turnOn: function () {
+                var self = this;
+                self.fsm &amp;&amp; self.fsm.finishAsyncRendering &amp;&amp; self.fsm.finishAsyncRendering();//异步加载数据结束
+                if (self.isFirstLoad) {//TBD?  || self.templateFunctions.length == 0
+                    self._parse();
+                    self.initVue();//解析vue
+                    /*解析模版 不改变生命周期*/
+                } else {
+                    self.reparse(self.viewData, {needDojoParse: true, clear: true, lifecycle: true});
+                    /*重新解析模版 不改变生命周期*/
+                }
+            },
+
+            /**
+            *@description 映射dojo的id和值
+             */
+            dojoMapValues: function (opts) {
+                var self = this;
+                _.each(opts, function (value, key) {
+                    if (_.isString(value)) {
+                        self.registry.byId(key).setValue(value);
+                    }
+                })
+            },
+
+            /*根据ID给页面上元素赋值*/
+            mapValues: function (mappingObj, opts) {
+                var self = this;
+                _.each(mappingObj, function (value, selector) {
+                    if (!opts) {
+                        self.$el.find('#' + selector).val(value);
+                    }
+                });
+            },
+
+            /*输出日志，带有颜色区分不同view*/
+            log: function (msg) {
+                var self = this;
+                console.log("%c" + msg, 'color:' + self.logColor);
+            },
+
+            /*订阅事件*/
+            subscribeTopics: function (argument) {
+
+            },
+
+            /*监听model的变化
+            观察者（Observer）模式
+            */
+            listenToModel: function () {
+                var self = this;
+            },
+
+            /*获取URL参数*/
+            getQueryObj: function () {
+                return cUtilKai.getQueryObj();
+            },
+
+            /*获得index.html地址*/
+            getIndexURL: function () {
+                return cUtilKai.getIndexURL();
+            },
+            /*回到首页并刷新*/
+            restart: function () {
+                return cUtilKai.restart();
+            },
+            /*跳转URL但当前页面将不被记录浏览器历史，因此当前页面将不会被跳转到的新页面回退到*/
+            replaceViewHash: function () {
+                return cUtilKai.replaceViewHash();
+            },
+            /*一次性绑定事件*/
+            bind: function (opts) {
+                var self = this;
+                return $.proxy(cUtilKai.bind, self)(opts);
+            },
+
+            //TBD move here temp
+            /*判断是否是正确的返回*/
+            isSucceedResponse: function (response) {
+                if(!(response instanceof Error)){
+                  return response &amp;&amp; response.responseStatus &amp;&amp; response.responseStatus.code == '000000';
+                }else{
+                  return false;
+                }
+            },
+
+            /**
+            *@description 显示response的错误信息
+            *门面模式 显示各类错误
+            */
+            showResponseError:function(response,callback, toastDuration){
+              var self = this;
+              /*小贷接口未登录状态*/
+              if(response &amp;&amp;  _.isObject(response.responseStatus)){
+                if(response.responseStatus.code == '400004' || response.responseStatus.code == '900000'){//登录超时错误码
+                  self.showToast({
+                    text:'登录超时，请重新登录',
+                    callback:function(){
+                      Kai.forward(Kai.loginUrl);
+                    },
+                    closeTime: toastDuration || 2500
+                  });
+                  /*
+                  if(response.responseStatus.code == '400004'){
+                  self.forward('h5/login');
+                }
+                */
+                }else if(response &amp;&amp;  _.isObject(response.responseStatus) &amp;&amp; response.responseStatus.msg){
+                  /**
+                  返回错误信息
+                  */
+                  self.showToast({
+                    text:response.responseStatus.msg,
+                    callback:callback,
+                    closeTime: toastDuration || 2000
+                  });
+                }
+              }else if(_.isObject(response) &amp;&amp; response.msg){
+                /*
+                dataHandler的defer.reject的错误显示
+                */
+                self.showToast({
+                  text:response.msg,
+                  callback:callback,
+                  closeTime: toastDuration || 2000
+                });
+              }else if(_.isObject(response) &amp;&amp; (response.status == 0)){//登录失效
+                //self.showLoginDialog();//TBD
+                //Kai.forward(Kai.loginUrl);
+              }else if(_.isObject(response) &amp;&amp; _.isString(response.text)){
+                self.showToast({
+                  text:response.text,
+                  callback:callback
+                });
+              }else{
+                /*
+                默认错误信息显示
+                */
+                self.showToast({
+                  text:'网络错误，请重试',
+                  callback:callback
+                });
+              }
+            },
+
+            /*
+            check if user is login
+            */
+            isLogin: function () {
+                var UserStore = CommonStore.UserStore.getInstance();
+                var userStoreData = UserStore.get();
+                if (this.debugData.isDebug) {
+                    return this.debugData.isLogin;
+                }
+                if (Kai.isLogin()) {
+                    return true;
+                } else {
+                    return false;
+                }
+            },
+
+            /**
+            显示错误页面
+            */
+            showErrorPage: function (configData) {
+                var self = this;
+                if (Kai.isH5) {
+                    /*Kai.forward('h5/error');*/
+                } else {
+                    Kai.forward(Kai.errorUrl);
+                }
+            },
+
+            /**
+            显示404页面
+            */
+            showLostPage: function (configData) {
+                var self = this;
+                if (Kai.isH5) {
+                    /*Kai.forward('h5/error');*/
+                } else {
+                    Kai.forward(Kai.lostUrl);
+                }
+            },
+
+            /*set user store for login*/
+            setUserStore: function (userInfo) {
+                var headStore = CommonStore.HeadStore.getInstance();
+                var UserStore = CommonStore.UserStore.getInstance();
+                var ssoToken = userInfo.ssoToken;
+                var userName = userInfo.userName || '';
+                var verify = userInfo.verify || '';
+                var phone = userInfo.phone || '';
+                var nickName = userInfo.nickName || '';
+
+                //设置用户信息
+                UserStore.setAttr(_.extend(userInfo,{
+                    'auth': ssoToken,
+                    'Auth': ssoToken,
+                    'UserName': userName,
+                    'phone': phone,
+                    'verify': verify,
+                    'nickName': nickName,
+                    'callSystem':userInfo.callSystem
+                }));
+                //设置header请求信息
+                headStore.setAttr('auth', userInfo.ssoToken);
+                headStore.setAttr('grayTestCode',Kai.getQuery().graytestcode);//AB test code TBD
+                UserStore.setAttr(userInfo);
+            },
+
+            /*
+            subscribe topic for a view, and provide callback for it
+            */
+            subscribe: function (topic, callback) {
+                var self = this;
+                topic.subscribe(self.viewName, callback);
+            },
+
+            /*unsubscribe topics for a view*/
+            unsubscribe: function (topic) {
+                var self = this;
+                if(!topic){
+                    return false;
+                }
+                if(_.isArray(topic)){
+                    _.each(topic,function(topicItem){
+                        topicItem.unsubscribe(self.viewName);
+                    });
+                }else{
+                    topic.unsubscribe(self.viewName);
+                }
+            },
+
+            /**
+            以view为集合发送事件 适配器模式 同时可以发送单个topic和一个topic数组
+            而适配器模式则要把一个接口转换为另一个接口，它并不会滤除某些能力，也不会简化接口
+            */
+            publish: function (topic) {
+                var self = this;
+                if(!topic){
+                    return false;
+                }
+                if(_.isArray(topic)){
+                    _.each(topic,function(topicItem){
+                      topicItem.set('source',self.viewName);
+                      topicItem.set('sourceParentViewName',self.parentViewName);
+                      topic.publish();
+                    });
+                }else{
+                    topic.set('source',self.viewName);
+                    topic.set('sourceParentViewName',self.parentViewName);
+                    topic.publish();
+                }
+            },
+
+            /**
+            @description 获得该子页面生成dijitWidget需要添加的后缀 使用中划线替换左斜杠
+            */
+            getViewContextPostfix:function(viewName){
+                var self = this;
+                var postfixViewName;
+                if(!self.viewItem){
+                    return false;
+                }
+                self.viewItem.postfix = self.viewItem.postfix || '';
+                if(_.isString(viewName)){//如果想根据viewName获取对应的
+                    return '___' + viewName.replace(/\//g,"-");
+                }else{
+                    if(self.viewContextPostfix){//已经缓存
+                        return self.viewContextPostfix;
+                    }else{//尚未生成
+                        if(self.viewItem){
+                            self.viewContextPostfix = '___' + self.viewItem.postfix.replace(/\//g,"-");
+                            return self.viewContextPostfix;
+                        }else{
+                            return false;
+                        }
+                    }
+                }
+            },
+
+            //rewrite parser.parse method for dojo
+            parserMethodFactory:{
+                _parse:function(destNode){
+                    var self = this;
+                    self.widgetsEls = {};
+                    self.viewContextPostfix = self.getViewContextPostfix();
+                    $(destNode).find('[id][data-dojo-type],[data-dojo-id]').each(function(index,node){//TBD other with id attribute
+                      var orgId = $(node).attr('id');
+                      var targetWidgetId = $(node).attr('data-dojo-id');
+                      if(orgId){//设置了id
+                        $(node).attr('id',orgId + self.viewContextPostfix);//
+                        self.widgetsEls[orgId] = {
+                          selector:orgId
+                        };//TBD generateEls
+                      }else if(targetWidgetId){//设置了data-dojo-id
+                        $(node).attr('data-dojo-id',targetWidgetId + self.viewContextPostfix);//
+                        self.widgetsEls[targetWidgetId] = {
+                          selector:targetWidgetId
+                        };//TBD generateEls
+                      }
+                    });
+                    self.els = _.extend(self.els||{},self.widgetsEls);
+                    $.proxy(self.generateEls,self)(self.widgetsEls);//part
+                    //self.generateEls(self.widgetsEls);//regenerate els
+                    return _parser.parse(destNode);
+                },
+                getInstance:function(context){
+                    return $.proxy(this._parse,context);
+                }
+            },
+
+            /**rewrite dijit.byId*/
+            registryMethodFactory:{
+                _byId:function(id){
+                    var self = this;
+                    self.viewContextPostfix = self.getViewContextPostfix();
+                    var contextId = id + self.viewContextPostfix;
+                    return _registry.byId(contextId);
+                },
+
+                getByIdFn:function(){
+                    return function(id){
+                        var self = this;
+                        self.viewContextPostfix = self.getViewContextPostfix();
+                        var contextId = id + self.viewContextPostfix;
+                        return _registry.byId(contextId);
+                    }
+                },
+
+                getInstance:function(context){
+                    return $.proxy(this._byId,context);
+                    //return $.proxy(this.getByIdFn(),context);
+                }
+            },
+
+            /**
+            页面复用，给dijit添加view后缀
+            */
+            getContextPostfix:function(contextId){
+              var self = this;
+              return self.getViewContextPostfix();
+            },
+
+            /**
+            页面复用，生成的id去掉view后缀
+            */
+            removeContextPostfix:function(contextId){
+                if(_.isString(contextId)){
+                    if (contextId.indexOf('__') &lt; 0) {
+                        return contextId;
+                    } else {
+                        return contextId.substring(0,contextId.indexOf('__'));
+                    }
+                }
+            },
+
+            /**
+            TBD
+            */
+            parseURL:function(){
+            },
+
+            /**
+            重新加载所有子页面
+            */
+            reloadSubViews:function(){
+                var self = this;
+                _.each(this.childViewItems, function (childViewItem) {
+                    if (!childViewItem.inaccessible) {
+                        if (childViewItem.isDefault) {
+                            Kai.forward(childViewItem.id, {keepURL: true});
+                        } else {
+                        }
+                    }
+                });
+            },
+
+            /**
+            更新当前显示的子tab内容
+            */
+            updateShownView: function (opts) {
+                var self = this;
+                if (self.els["tabContainer"]) {
+                    var selectedWidget = self.els["tabContainer"].selectedChildWidget;
+                    var selectedWidgetId = selectedWidget.id;
+                    self.selectedViewId = self.removeContextPostfix(selectedWidgetId) || '';
+                    var subViewName = self.removeContextPostfix(self.selectedViewId);
+                if(self.selectedViewId &amp;&amp; selectedWidget.isLoaded){//已经加载成功
+                    self.forward(subViewName, opts || {keepURL: true});
+                }
+                else{
+                    on(selectedWidget,'load',function(){
+                        //self.showLoading();
+                        self.model.set('currentChildViewName',subViewName,{silent:true});
+                        Kai.forward(subViewName, opts || {keepURL: true});
+                    });
+
+                }
+            } else {
+                self.selectedViewId = '';
+            }
+          },
+
+          /*
+          读取从参数中传输过来的obj
+          */
+          readModelObj:function(){
+            var self = this;
+            if(_.isObject(self.modelObj)){
+              self.model.set(self.modelObj);
+              self.modelObj = null;
+            }
+          },
+
+          /**
+          set view state to requests completed
+          完成所有ajax请求的状态更新
+          */
+          completeRequests:function(){
+            var self = this;
+            Kai.viewStates.get(self.viewName) &amp;&amp; Kai.viewStates.get(self.viewName).set('current','requestsCompleted');
+          },
+
+          /**
+          发送生命周期UBT
+          */
+          sendViewLifecyle:function(state){
+            var self = this;
+            //alert(self.viewName + ' ' + state);
+            self.setUbtData(state);
+            self.sendUbt(this,self.ubtData,{
+              type:'VL'
+            });
+          },
+
+          /**
+          @description 发送麻袋理财的统计数据
+          */
+          sendMDTrack:function(trackObj){
+            var self = this;
+            if((typeof Tracker == 'undefined') || (!Tracker)){
+              return false;//防止第三方插件影响业务逻辑
+            }
+            var TrackObj = trackObj || self.getTrackConfig();
+            if(_.isObject(TrackObj)){
+              var tracker = new Tracker(TrackObj);
+              // 发送land事件信息
+              tracker.land();
+            }
+          },
+
+          /**
+          获得当前view的dijit节点
+          */
+          getDijitWidget:function(){
+            var self = this;
+            if(!self.parentDijitWidget){
+              return false;
+            }
+            var parentNode = $(self.parentDijitWidget.domNode);
+            var viewNode = parentNode.find('[data-viewname="' + self.viewName + '"]')[0];
+            return _registry.byNode(viewNode);//返回当前view对应的widget
+          },
+
+          /*
+          设置该tab是否允许关闭
+          */
+          setClosable:function(closable){
+            var self = this;
+            self.getDijitWidget().set('closable',closable);
+          },
+
+          /*
+          @description 将节点变成不可操作状态
+          */
+          setReadonly:function(opts){
+              var self = this;
+              var opts = opts || {};
+              _.each(self.childViewNames,function(childViewName){
+                var viewStateModel = Kai.viewStates.get(childViewName);
+                self.listenTo(viewStateModel,'change:current',function(viewStateModel,current){
+                  if(viewStateModel.get('viewName').indexOf('trial_note') >= 0){
+                      var trialNoteDialog = self.registry.byId('phone_check_dialog_note');
+                      dijitHelper.setFormReadonly(trialNoteDialog);
+                  }
+                  if(current == 'loaded'){
+                    var fillInForm = self.registry.byId(childViewName);
+                    dijitHelper.setFormReadonly(fillInForm);
+                }
+            });
+            });
+            if(opts.selfIncluded){//包含自身
+              dijitHelper.setFormReadonly(self.getDijitWidget() || self.$el);
+            }
+          },
+
+          /*
+          add vue template mechanism
+          */
+          initVue:function(){
+            var self = this;
+            var vueInitParams = {};
+            if (self.beforeInitVue) {
+              self.beforeInitVue();//add callback before vue initialized
+            }
+            if(self.getVueInitParams){
+              _.extend(vueInitParams,self.getVueInitParams(),{
+                el: self.$el[0],//domNode
+              });
+            }else{
+              vueInitParams = {//
+                el: self.$el[0],//domNode
+                data:_.isFunction(self.getVueData)?(self.getVueData()||{}):{},//数据
+                methods:_.isFunction(self.getVueMethods)?(self.getVueMethods()||{}):{},//方法
+                computed:_.isFunction(self.getVueComputed)?(self.getVueComputed()||{}):{},//属性计算
+              };
+            }
+            _.extend(vueInitParams.data,{'viewName':self.viewName});
+            self.vm = new Vue(vueInitParams);
+          },
+
+          /**
+          委托viewUtils到父页面 代理模式
+          @description 通过代理模式view中定义生命周期，但是在函数定义中完成特定方法
+          */
+          delegateViewUtils:function(){
+            var self = this;
+            if(self.parentViewInstance){
+              self.viewUtils = lang.delegate(self.viewUtils,self.parentViewInstance.viewUtils || {});
+            }
+          },
+
+          /**
+          发送统计信息
+          */
+          setUbtData:function(){
+            _.noop;
+          },
+
+          /**
+          对模版进行处理
+          */
+          parseTempate:function(){
+
+          },
+
+          /*
+          @关闭父亲页面
+          */
+          closeParentView:function(){
+            var self = this;
+            indexLevelTabCloseRequireTopic.set('data',{
+              targetViewId:self.parentView,//父亲页面Id
+              operateType:'remove'
+            });
+            indexLevelTabCloseRequireTopic.publish();
+          },
+
+          /*
+          @关闭自己页面
+          */
+          closeView:function(){
+            var self = this;
+            indexLevelTabCloseRequireTopic.set('data',{
+              targetViewId:self.viewName,
+              operateType:'remove'
+            });
+            indexLevelTabCloseRequireTopic.publish();
+          },
+
+          /**
+          @description 显示h5页面的错误提示
+          */
+          showWarningNodes:function(){
+            var self = this;
+            var needShowWarningNodes = self.$el.find('.weui_icon_success_no_circle:hidden').siblings('.weui_icon_warn');
+            needShowWarningNodes.show();
+            var invalidateInputCount = needShowWarningNodes.length;
+            return invalidateInputCount || 0;
+          }
+        });
+
+        return PageView;
+      });
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="-_checkSelectedDown.html">_checkSelectedDown</a></li><li><a href="-_checkSelectedUp.html">_checkSelectedUp</a></li><li><a href="c.ui.imageSlider.html">imageSlider</a></li><li><a href="cAbstractModel.html">cAbstractModel</a></li><li><a href="cAbstractStore.html">cAbstractStore</a></li><li><a href="cBase.html">cBase</a></li><li><a href="cCoreInherit.html">cCoreInherit</a></li><li><a href="cModel.html">cModel</a></li><li><a href="cPageList.html">cPageList</a></li><li><a href="cSessionStore.html">cSessionStore</a></li><li><a href="cStore.html">cStore</a></li><li><a href="cUIInputClear.html">cUIInputClear</a></li><li><a href="cUserModel.ClientIdModel.html">ClientIdModel</a></li><li><a href="cUserModel.GetUserModel.html">GetUserModel</a></li><li><a href="cUserModel.NotUserLoginModel.html">NotUserLoginModel</a></li><li><a href="cUserModel.ThirdPartInfoModel.html">ThirdPartInfoModel</a></li><li><a href="cUserModel.UserLoginModel.html">UserLoginModel</a></li><li><a href="Service.cGeo.Address.html">Address</a></li><li><a href="Service.cGeo.City.html">City</a></li><li><a href="Service.cGeo.Coordinate.html">Coordinate</a></li><li><a href="Service.cGeo.Geolocation.html">Geolocation</a></li><li><a href="Service.cGeo.Map.html">Map</a></li><li><a href="Service.cGeo.Map.Icon.html">Icon</a></li><li><a href="Service.cGeo.Map.Layer.html">Layer</a></li><li><a href="Service.cGeo.Map.Mark.html">Mark</a></li><li><a href="Service.cGeo.MapS.html">MapS</a></li><li><a href="Service.cGeo.POI.html">POI</a></li><li><a href="Service.cGeo.POIQuery.html">POIQuery</a></li><li><a href="UICalendarCommon.html">UICalendarCommon</a></li><li><a href="UIScroll.html">UIScroll</a></li><li><a href="UIView.html">UIView</a></li><li><a href="Util.cUtilData.CData.html">CData</a></li><li><a href="Util.cUtilDate.CDate.html">CDate</a></li></ul><h3>Namespaces</h3><ul><li><a href="-_.dateUtil.html">dateUtil</a></li><li><a href="cAjax.html">cAjax</a></li><li><a href="Common.cMessageCenter.html">cMessageCenter</a></li><li><a href="Service.cGeo.html">Service.cGeo</a></li><li><a href="Storage.cAbstractStorage.html">cAbstractStorage</a></li><li><a href="Storage.cLocalStorage.html">cLocalStorage</a></li><li><a href="Storage.cMemoryStorage.html">cMemoryStorage</a></li><li><a href="Storage.cSessionStorage.html">cSessionStorage</a></li><li><a href="Store.cCommonStore.html">cCommonStore</a></li><li><a href="Store.cCommonStore.cHeadStore.html">cHeadStore</a></li><li><a href="Store.cCommonStore.cMobileTokenStore.html">cMobileTokenStore</a></li><li><a href="Store.cCommonStore.cUserStore.html">cUserStore</a></li><li><a href="Store.cMarketStore.html">cMarketStore</a></li><li><a href="Store.cMarketStore.SalesObjectStore.html">SalesObjectStore</a></li><li><a href="Store.cMarketStore.SalesStore.html">SalesStore</a></li><li><a href="Store.cMarketStore.UnionStore.html">UnionStore</a></li><li><a href="Store.cMemoryStore.html">cMemoryStore</a></li><li><a href="Util.cUtilCacheViews.html">cUtilCacheViews</a></li><li><a href="Util.cUtilCryptBase64.html">cUtilCryptBase64</a></li><li><a href="Util.cUtilCryptBase64.Base64.html">Base64</a></li><li><a href="Util.cUtilCryptRSA.html">cUtilCryptRSA</a></li><li><a href="Util.cUtilDate.html">cUtilDate</a></li><li><a href="Util.cUtilObject.html">cUtilObject</a></li><li><a href="Util.cUtilPath.html">cUtilPath</a></li><li><a href="Util.cUtilPerformance.html">cUtilPerformance</a></li><li><a href="Util.cUtilValidate.html">cUtilValidate</a></li><li><a href="Util.dgrid.html">dgrid</a></li></ul><h3>Global</h3><ul><li><a href="global.html#_stores%255Bundefined%255D">_stores[undefined]</a></li><li><a href="global.html#abort">abort</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bindthis">bindthis</a></li><li><a href="global.html#buildurl">buildurl</a></li><li><a href="global.html#childViewNames">childViewNames</a></li><li><a href="global.html#clearResult">clearResult</a></li><li><a href="global.html#cPageView#onCreateopts%257B%257D">cPageView#onCreate
+            opts {
+          }</a></li><li><a href="global.html#createElement">createElement</a></li><li><a href="global.html#createRoot">createRoot</a></li><li><a href="global.html#excute">excute</a></li><li><a href="global.html#execute">execute</a></li><li><a href="global.html#extension">extension</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAttr">getAttr</a></li><li><a href="global.html#getBiggerzIndex">getBiggerzIndex</a></li><li><a href="global.html#getCookieVal">getCookieVal</a></li><li><a href="global.html#getCreateId">getCreateId</a></li><li><a href="global.html#getCurStyleOfEl">getCurStyleOfEl</a></li><li><a href="global.html#getDirtyItems">getDirtyItems</a></li><li><a href="global.html#getElementPos">getElementPos</a></li><li><a href="global.html#getElementRealSize">getElementRealSize</a></li><li><a href="global.html#getExpireTime">getExpireTime</a></li><li><a href="global.html#getMousePosOfElement">getMousePosOfElement</a></li><li><a href="global.html#getPageScrollPos">getPageScrollPos</a></li><li><a href="global.html#getPageSize">getPageSize</a></li><li><a href="global.html#getParam">getParam</a></li><li><a href="global.html#getQuery">getQuery</a></li><li><a href="global.html#getResult">getResult</a></li><li><a href="global.html#initialize">initialize</a></li><li><a href="global.html#InputClear">InputClear</a></li><li><a href="global.html#isUseH5Sys">isUseH5Sys</a></li><li><a href="global.html#key">key</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#presetData">presetData</a></li><li><a href="global.html#propertys">propertys</a></li><li><a href="global.html#pushValidates">pushValidates</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeAttr">removeAttr</a></li><li><a href="global.html#rollback">rollback</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setAttr">setAttr</a></li><li><a href="global.html#setConfig">setConfig</a></li><li><a href="global.html#setExpireTime">setExpireTime</a></li><li><a href="global.html#setLifeTime">setLifeTime</a></li><li><a href="global.html#setParam">setParam</a></li><li><a href="global.html#showLog">showLog</a></li><li><a href="global.html#showToast">showToast</a></li><li><a href="global.html#strToNum">strToNum</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Thu Oct 13 2016 13:38:14 GMT+0800 (CST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: kaiView/pc/widget/dijit/login_dialog.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: kaiView/pc/widget/dijit/login_dialog.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>define([
+  'dojox/encoding/crypto/SimpleAES',
+  "dojo/on",
+  "custom/dijit/_WidgetBase",
+  "dojo/_base/declare",
+  "dojo/text!./templates/login_dialog.html",
+  'dojox/encoding/digests/_base',
+  'dojox/encoding/digests/MD5',
+  "dijit/form/Select",
+  "dijit/form/TextBox",
+  "dijit/form/Textarea",
+  "dijit/Fieldset",
+  "dijit/layout/Container",
+  "dijit/Dialog",
+  "dijit/form/RadioButton",
+  "dijit/ConfirmDialog",
+  "dijit/form/Form"
+],
+function (
+  SimpleAES,
+  on,
+  _CustomWidgetBase,
+  declare,
+  template,
+  ded,
+  MD5
+) {
+  //var _loginComm = Models.login.getInstance();
+
+  return declare([_CustomWidgetBase], {
+
+    templateString: template,
+
+    view:null,
+
+    loginCallback:null,
+
+    widgetData: null,
+
+    /*显示弹窗*/
+    show: function () {
+      var self = this;
+      self.dialog.show();
+      self.inherited(arguments);
+      self.isVerificationCode=self.widgetData.isVerificationCode;
+    },
+    els:{
+      'verificationCodeSButton':{
+        selector:'.verificationCodeSButton',
+        type:'jquery'
+      }
+    },
+
+    //获取参数
+    getParams:function(isLogin){
+      var self = this;
+      var credential = self.form.get('value');
+      /**
+       @description
+       idNameAttribute : "name"
+       passwordNameAttribute : "password"
+       requireMD5Encrypt : false
+       title : ""
+       */
+      if(_.isObject(credential)
+          &amp;&amp; (
+          (credential[self.widgetData.idNameAttribute] || credential.username || credential.loginId)
+          &amp;&amp; (credential[self.widgetData.passwordNameAttribute] || credential.password)//设置了自定义字段属性
+          )
+      ){
+        if(self.isVerificationCode &amp;&amp; isLogin?!credential.captcha:false){ //如果需要验证码，登录时需要判断验证码有没有输入
+            self.view.hideLoading();
+            self.view.showToast({
+              text:'请输入验证码'
+            });
+            return false;
+        }
+        if(self.widgetData.requireMD5Encrypt === false){//是否需要MD5加密
+
+        }else{
+          credential.password = MD5(credential.password,ded.outputTypes.Hex);
+        }
+        return credential;
+      }else{
+        self.view.hideLoading();
+        self.view.showToast({
+          text:'请输入用户名密码'
+        });
+        return false;
+      }
+    },
+
+    countDown:function(secs,btnCon){//倒计时
+      var self = this;
+      //self.verificationCodeSButton.html(secs+"秒后可重新获取").addClass("disabled");
+      btnCon.set({"label":secs+"秒后可重新获取","disabled":true});
+      if(--secs>0){
+        self.countDownTimeHandler = setTimeout(function(){
+          $.proxy(self.countDown,self)(secs,btnCon);
+        },1000);
+      }else{
+        $.proxy(self.enableSendVerifyCodeButton,self)(btnCon);
+        return true;
+      }
+    },
+    enableSendVerifyCodeButton:function(btnCon){
+      var self = this;
+      if(_.isNumber(self.countDownTimeHandler)){
+        clearTimeout(self.countDownTimeHandler);
+      }
+      btnCon.set({"label":"获取验证码","disabled":false});
+      //self.verificationCodeSButton.html("发送验证码").removeClass("disabled");
+    },
+
+    /**
+    登录方法
+    */
+    login:function(){
+      var self = this;
+      var postParams = {};
+      self.view.showLoading();
+      //登录成功回调
+      var onSuccess = function(res){
+        self.view.hideLoading();
+        if(self.view.isSucceedResponse(res)){//使用应用层的是否成功返回验证函数验证返回是否正确
+          self.view.showToast({
+            text:'登录成功',
+            callback:function(){
+              self.dialog.hide();
+              var customResponseBodyParser = self.view.responseBodyParser;//自定义responseBody解析函数
+              var responseBody = _.isFunction(customResponseBodyParser)?customResponseBodyParser(res):(res.body.obj || res.body || {});
+              self.view.setUserStore(_.extend(responseBody,{
+                ___password:SimpleAES.encrypt(postParams.password,responseBody.ssoToken || '')
+              }));
+              if(self.view.viewName.indexOf('login') >= 0){
+              }else{
+              }
+              window.onbeforeunload = null;
+              //_.isObject(localStorage) &amp;&amp; localStorage.clear();
+              /*self.view.forward(Kai.indexUrl,{
+                //keepURL:false,
+                keepURL:true,
+                forceNewCreate:true//强制进入新的页面
+              });
+              */
+              Kai.restart();
+            }
+          });
+        }else{
+          self.view.showResponseError(res);
+        }
+      };
+      //登录失败回调
+      var onError = function(e){
+        self.view.hideLoading();
+        console.log(e);
+        self.view.showToast({
+          text:'网络不给力，请重试'
+        });
+      };
+      if((postParams = self.getParams(true))){
+        if(Kai.useRest){//
+          self.view._loginComm.add(postParams).then(function(res){
+            //成功
+            onSuccess(res);
+          },function(res){
+            //失败
+            onError(res);
+          });
+        }else{
+          self.view._loginComm.param = postParams;
+          self.view._loginComm.execute(onSuccess,onError,true,self);
+        }
+      }else{
+        return false;
+      }
+    },
+
+    /*获取验证码方法*/
+    getVerificationCode:function(){
+      var self = this;
+      var postParams = {};
+      self.view.showLoading();
+      //登录成功回调
+      var onSuccess = function(res){
+        self.view.hideLoading();
+        if(self.view.isSucceedResponse(res)){
+          var mobile=res.body.obj?res.body.obj.mobile:'';
+          self.view.showToast({
+            text:'我们已向您的['+mobile+']手机发送了验证码，有效期为5分钟'
+          });
+          self.countDown(60,self.verificationCodeSButton);
+        }else{
+          self.view.showResponseError(res);
+          self.enableSendVerifyCodeButton(self.verificationCodeSButton);
+        }
+      };
+      //登录失败回调
+      var onError = function(e){
+        self.view.hideLoading();
+        console.log(e);
+        self.view.showToast({
+          text:'网络不给力，请重试'
+        });
+      };
+      if((postParams = self.getParams(false))){
+
+        if(Kai.useRest){//
+          self.view._getVerificationCodeComm.add(postParams).then(function(res){
+            //成功
+            onSuccess(res);
+          },function(res){
+            //失败
+            onError(res);
+          });
+        }else{
+          self.view._getVerificationCodeComm.param = postParams;
+          self.view._getVerificationCodeComm.execute(onSuccess,onError,true,self);
+        }
+      }else{
+        return false;
+      }
+    },
+
+    /**
+    绑定事件
+    */
+    bindEvents: function () {
+      var self = this;
+      if(self.eventsBound){
+        return false;//防止重复绑定事件
+      }
+      self.eventsBound = true;
+      /*
+      支持Enter键提交
+      */
+      on(self.form,'keyup',function(e){
+        if( (e.keyIdentifier == 'Enter') || (e.key == "Enter")){
+          self.login();//登录
+        }
+      });
+      /*
+      点击提交按钮
+      */
+      on(self.okButton,'click',function(){
+        self.login();//登录
+      });
+
+      /*
+      点击获取验证码
+      */
+      self.verificationCodeSButton &amp;&amp; on(self.verificationCodeSButton,'click',function(){
+        if(self.verificationCodeSButton.label==="获取验证码"){
+         self.getVerificationCode();//获取验证码信息
+        }else{
+          return false;
+        }
+      });
+    },
+
+    /**
+    @description
+    */
+  });
+});
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="-_checkSelectedDown.html">_checkSelectedDown</a></li><li><a href="-_checkSelectedUp.html">_checkSelectedUp</a></li><li><a href="c.ui.imageSlider.html">imageSlider</a></li><li><a href="cAbstractModel.html">cAbstractModel</a></li><li><a href="cAbstractStore.html">cAbstractStore</a></li><li><a href="cBase.html">cBase</a></li><li><a href="cCoreInherit.html">cCoreInherit</a></li><li><a href="cModel.html">cModel</a></li><li><a href="cPageList.html">cPageList</a></li><li><a href="cSessionStore.html">cSessionStore</a></li><li><a href="cStore.html">cStore</a></li><li><a href="cUIInputClear.html">cUIInputClear</a></li><li><a href="cUserModel.ClientIdModel.html">ClientIdModel</a></li><li><a href="cUserModel.GetUserModel.html">GetUserModel</a></li><li><a href="cUserModel.NotUserLoginModel.html">NotUserLoginModel</a></li><li><a href="cUserModel.ThirdPartInfoModel.html">ThirdPartInfoModel</a></li><li><a href="cUserModel.UserLoginModel.html">UserLoginModel</a></li><li><a href="Service.cGeo.Address.html">Address</a></li><li><a href="Service.cGeo.City.html">City</a></li><li><a href="Service.cGeo.Coordinate.html">Coordinate</a></li><li><a href="Service.cGeo.Geolocation.html">Geolocation</a></li><li><a href="Service.cGeo.Map.html">Map</a></li><li><a href="Service.cGeo.Map.Icon.html">Icon</a></li><li><a href="Service.cGeo.Map.Layer.html">Layer</a></li><li><a href="Service.cGeo.Map.Mark.html">Mark</a></li><li><a href="Service.cGeo.MapS.html">MapS</a></li><li><a href="Service.cGeo.POI.html">POI</a></li><li><a href="Service.cGeo.POIQuery.html">POIQuery</a></li><li><a href="UICalendarCommon.html">UICalendarCommon</a></li><li><a href="UIScroll.html">UIScroll</a></li><li><a href="UIView.html">UIView</a></li><li><a href="Util.cUtilData.CData.html">CData</a></li><li><a href="Util.cUtilDate.CDate.html">CDate</a></li></ul><h3>Namespaces</h3><ul><li><a href="-_.dateUtil.html">dateUtil</a></li><li><a href="cAjax.html">cAjax</a></li><li><a href="Common.cMessageCenter.html">cMessageCenter</a></li><li><a href="Service.cGeo.html">Service.cGeo</a></li><li><a href="Storage.cAbstractStorage.html">cAbstractStorage</a></li><li><a href="Storage.cLocalStorage.html">cLocalStorage</a></li><li><a href="Storage.cMemoryStorage.html">cMemoryStorage</a></li><li><a href="Storage.cSessionStorage.html">cSessionStorage</a></li><li><a href="Store.cCommonStore.html">cCommonStore</a></li><li><a href="Store.cCommonStore.cHeadStore.html">cHeadStore</a></li><li><a href="Store.cCommonStore.cMobileTokenStore.html">cMobileTokenStore</a></li><li><a href="Store.cCommonStore.cUserStore.html">cUserStore</a></li><li><a href="Store.cMarketStore.html">cMarketStore</a></li><li><a href="Store.cMarketStore.SalesObjectStore.html">SalesObjectStore</a></li><li><a href="Store.cMarketStore.SalesStore.html">SalesStore</a></li><li><a href="Store.cMarketStore.UnionStore.html">UnionStore</a></li><li><a href="Store.cMemoryStore.html">cMemoryStore</a></li><li><a href="Util.cUtilCacheViews.html">cUtilCacheViews</a></li><li><a href="Util.cUtilCryptBase64.html">cUtilCryptBase64</a></li><li><a href="Util.cUtilCryptBase64.Base64.html">Base64</a></li><li><a href="Util.cUtilCryptRSA.html">cUtilCryptRSA</a></li><li><a href="Util.cUtilDate.html">cUtilDate</a></li><li><a href="Util.cUtilObject.html">cUtilObject</a></li><li><a href="Util.cUtilPath.html">cUtilPath</a></li><li><a href="Util.cUtilPerformance.html">cUtilPerformance</a></li><li><a href="Util.cUtilValidate.html">cUtilValidate</a></li><li><a href="Util.dgrid.html">dgrid</a></li></ul><h3>Global</h3><ul><li><a href="global.html#_stores%255Bundefined%255D">_stores[undefined]</a></li><li><a href="global.html#abort">abort</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bindthis">bindthis</a></li><li><a href="global.html#buildurl">buildurl</a></li><li><a href="global.html#childViewNames">childViewNames</a></li><li><a href="global.html#clearResult">clearResult</a></li><li><a href="global.html#cPageView#onCreateopts%257B%257D">cPageView#onCreate
+            opts {
+          }</a></li><li><a href="global.html#createElement">createElement</a></li><li><a href="global.html#createRoot">createRoot</a></li><li><a href="global.html#excute">excute</a></li><li><a href="global.html#execute">execute</a></li><li><a href="global.html#extension">extension</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAttr">getAttr</a></li><li><a href="global.html#getBiggerzIndex">getBiggerzIndex</a></li><li><a href="global.html#getCookieVal">getCookieVal</a></li><li><a href="global.html#getCreateId">getCreateId</a></li><li><a href="global.html#getCurStyleOfEl">getCurStyleOfEl</a></li><li><a href="global.html#getDirtyItems">getDirtyItems</a></li><li><a href="global.html#getElementPos">getElementPos</a></li><li><a href="global.html#getElementRealSize">getElementRealSize</a></li><li><a href="global.html#getExpireTime">getExpireTime</a></li><li><a href="global.html#getMousePosOfElement">getMousePosOfElement</a></li><li><a href="global.html#getPageScrollPos">getPageScrollPos</a></li><li><a href="global.html#getPageSize">getPageSize</a></li><li><a href="global.html#getParam">getParam</a></li><li><a href="global.html#getQuery">getQuery</a></li><li><a href="global.html#getResult">getResult</a></li><li><a href="global.html#initialize">initialize</a></li><li><a href="global.html#InputClear">InputClear</a></li><li><a href="global.html#isUseH5Sys">isUseH5Sys</a></li><li><a href="global.html#key">key</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#presetData">presetData</a></li><li><a href="global.html#propertys">propertys</a></li><li><a href="global.html#pushValidates">pushValidates</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeAttr">removeAttr</a></li><li><a href="global.html#rollback">rollback</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setAttr">setAttr</a></li><li><a href="global.html#setConfig">setConfig</a></li><li><a href="global.html#setExpireTime">setExpireTime</a></li><li><a href="global.html#setLifeTime">setLifeTime</a></li><li><a href="global.html#setParam">setParam</a></li><li><a href="global.html#showLog">showLog</a></li><li><a href="global.html#showToast">showToast</a></li><li><a href="global.html#strToNum">strToNum</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Thu Oct 13 2016 13:38:14 GMT+0800 (CST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

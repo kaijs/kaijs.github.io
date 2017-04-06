@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: page/viewHelper.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: page/viewHelper.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>define([], function () {
+    "use strict";
+    var viewHelper = {};
+
+    var listHelper = function (e, initialData) {
+        this.self = e;
+        if (_.isFunction(this.init)) {
+            this.init(initialData);
+        }
+    }
+
+    /**
+     默认接口格式：
+     请求：
+     {
+       pagenation :{
+         startIndex:
+         endIndex:
+       }
+     }
+     返回结果:
+     {
+       body:{
+         obj:{
+           list:[]
+           page:{
+             startIndex:
+             endIndex:
+             dataCount
+           }
+         }
+       }
+     }
+     */
+    listHelper.prototype = {
+        /*设置初始化参数*/
+        init: function (initialData) {
+
+            this.listContainer = initialData.listContainer;//当前列表容器
+            this.listTplFun = initialData.listTplFun;//当前列表DOM生成函数
+            this.NO_MORE_DOM = initialData.NO_MORE_DOM;//没有更多结果的显示DOM节点
+            this.NO_RESULT_DOM = initialData.NO_RESULT_DOM;//当前列表为空时显示DOM节点
+
+            this.startIndex = initialData.startIndex;//开始序号
+            this.endIndex = initialData.endIndex;//结束序号
+            this.iscomplete = false;//是否结束 初始化时为false
+            this.isScrollError = false;
+
+            this.totalRecordCount = initialData.dataCount || (Math.pow(2, 53) - 1);//一共有多少条
+            this.pageCount = initialData.pageCount;//当前页面请求的条数
+
+            this.listTemplateFunctionId = initialData.listTemplateFunctionId;//生成列表的函数id
+
+            this.bottomLoading = initialData.bottomLoading;
+        },
+
+        /*接口调用后的处理函数*/
+        scrollAdapter: function (data, isScroll) {
+            var scope = this.self;
+            /*正常请求回调*/
+            if (data &amp;&amp; data.body &amp;&amp; data.body.obj) {
+                this.totalRecordCount = data.body.obj.page.dataCount;//总条数
+                this.startIndex = this.startIndex + this.pageCount; // 更新请求开始序号 add index if data fetched successfully
+                isScroll ? this.addListAct(data) : this.listAct(data);//是在后面继续添加（第二次加载） 还是直接显示列表 （第一次列表显示）
+            } else {
+                /*请求失败 处理函数*/
+                this.errorEvt(isScroll);
+            };
+        },
+
+        /*第一次加载 data是一个response*/
+        listAct: function (data) {
+            var scope = this.self;
+            scope.hideLoading();
+            /*隐藏底部加载样式*/
+            window.scrollTo(0, 0);
+            this.listRender(data.body.obj.list);
+        },
+
+        /*非第一次加载  data是一个response*/
+        addListAct: function (data) {
+            var scope = this.self;
+            this.hideBottomLoading();
+            /*隐藏底部加载样式*/
+            this.addListRender(data.body.obj.list);
+            /*传递list数据*/
+        },
+
+        /*错误处理函数*/
+        errorEvt: function (isscroll) {
+            var scope = this.self;
+            scope.hideLoading();
+            this.hideBottomLoading();
+            if (isscroll) {
+                scope.showToast({
+                    text: '加载失败，请稍后再试'
+                });
+                this.isScrollError = true;
+                this.iscomplete = false;
+                scope.endPull();
+                //scope.closePull();
+                scope.showErrorMsg();
+                return false;
+            }
+            ;
+            //this.iscomplete = true;
+            scope.endPull();
+            window.scrollTo(0, 0);
+            //scope.showErrorMsg();
+        },
+
+        /*初次加载*/
+        listRender: function (listData) {
+            var scope = this.self;
+            if (listData &amp;&amp; listData.length > 0) {
+                if (this.endIndex > this.totalRecordCount) {// return some but it is the end
+                    this.iscomplete = true;
+                    this.NO_MORE_DOM &amp;&amp; this.NO_MORE_DOM.show();//没有更多
+                    //this.listcontainer.append(NO_RESULT_DOM); //TBD
+                    scope.endPull();
+                    scope.closePull();
+                } else {
+                    this.iscomplete = false;
+                    scope.endPull();
+                    this.NO_MORE_DOM &amp;&amp; this.NO_MORE_DOM.hide();
+                }
+
+            } else {//nothing return at all. It is a empty list.
+                //noresult
+                console.log('no results');
+                this.iscomplete = true;
+                //this.NO_MORE_DOM &amp;&amp; this.NO_MORE_DOM.show();
+                this.NO_RESULT_DOM &amp;&amp; this.NO_RESULT_DOM.show();
+                scope.endPull();//TBD
+                scope.closePull();
+                this.NO_MORE_DOM &amp;&amp; this.NO_MORE_DOM.hide();
+            }
+
+            if (scope.$el.find('.kai_widget').length > 0) {
+                scope.reparse(this.listTplFun, {list: listData}, {clear: true});
+                //scope.$el.find(".order-img").length > 0 &amp;&amp; scope.$el.find(".order-img").lazyload({effect : "fadeIn"});
+            } else {
+                scope.reparse({list: listData}, {
+                    templateFunctionId: this.listTemplateFunctionId,
+                    clear: true
+                });//重新解析列表，并清空已经有的内容
+            }
+        },
+
+        /*添加异步加载获得的新内容*/
+        addListRender: function (listData) {
+            var scope = this.self;
+            var listContainer = null;
+            var instantListContainer = '';//新增加的列表部分
+            if (this.listContainer.is('ul') || this.listContainer.hasClass('list_container')) {
+                listContainer = this.listContainer;
+            } else {
+                listContainer = this.listContainer.find('.list_container');
+                console.log(listContainer);
+            }
+
+            if (_.isArray(listData) &amp;&amp; listData.length > 0) {
+                instantListContainer = scope.reparse({list: listData}, {
+                    keepOld: true,
+                    templateFunctionId: this.listTemplateFunctionId
+                });
+                listContainer.append(instantListContainer ? $(instantListContainer) : "").show();
+                /*添加到当前已经有的列表底部*/
+            }
+
+            /*已经加载完*/
+            if (this.endIndex > this.totalRecordCount || this.startIndex > this.totalRecordCount) {
+                this.iscomplete = true;
+                this.NO_MORE_DOM &amp;&amp; this.NO_MORE_DOM.show();
+                this.hideBottomLoading();
+                scope.endPull();
+                scope.closePull();
+            } else {
+                /*没有加载完*/
+                this.iscomplete = false;
+                scope.endPull();
+                this.NO_MORE_DOM &amp;&amp; this.NO_MORE_DOM.hide();
+            }
+        },
+
+        /*显示底部的 加载中*/
+        showBottomLoading: function () {
+            console.log('show bottom loading');
+            if (this.bottomLoading) {
+                this.bottomLoading.show();
+            }
+        },
+
+        /*隐藏底部的 加载中 样式*/
+        hideBottomLoading: function () {
+            console.log('hide bottom loading');
+            if (this.bottomLoading) {
+                this.bottomLoading.hide();
+                this.bottomLoading = null;
+            }
+        },
+
+        /*获得当前位置*/
+        getScroll: function () {
+            var _touch = event.targetTouches[0].clientY;
+        }
+    };
+
+    viewHelper.listHelper = listHelper;
+
+    function getChangeViewFunction(viewName) {
+        return function () {
+            Kai.forward(viewName);
+        }
+    }
+
+    viewHelper.getChangeViewFunction = getChangeViewFunction;
+    return viewHelper;
+});</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="-_checkSelectedDown.html">_checkSelectedDown</a></li><li><a href="-_checkSelectedUp.html">_checkSelectedUp</a></li><li><a href="c.ui.imageSlider.html">imageSlider</a></li><li><a href="cAbstractModel.html">cAbstractModel</a></li><li><a href="cAbstractStore.html">cAbstractStore</a></li><li><a href="cBase.html">cBase</a></li><li><a href="cCoreInherit.html">cCoreInherit</a></li><li><a href="cModel.html">cModel</a></li><li><a href="cPageList.html">cPageList</a></li><li><a href="cSessionStore.html">cSessionStore</a></li><li><a href="cStore.html">cStore</a></li><li><a href="cUIInputClear.html">cUIInputClear</a></li><li><a href="cUserModel.ClientIdModel.html">ClientIdModel</a></li><li><a href="cUserModel.GetUserModel.html">GetUserModel</a></li><li><a href="cUserModel.NotUserLoginModel.html">NotUserLoginModel</a></li><li><a href="cUserModel.ThirdPartInfoModel.html">ThirdPartInfoModel</a></li><li><a href="cUserModel.UserLoginModel.html">UserLoginModel</a></li><li><a href="Service.cGeo.Address.html">Address</a></li><li><a href="Service.cGeo.City.html">City</a></li><li><a href="Service.cGeo.Coordinate.html">Coordinate</a></li><li><a href="Service.cGeo.Geolocation.html">Geolocation</a></li><li><a href="Service.cGeo.Map.html">Map</a></li><li><a href="Service.cGeo.Map.Icon.html">Icon</a></li><li><a href="Service.cGeo.Map.Layer.html">Layer</a></li><li><a href="Service.cGeo.Map.Mark.html">Mark</a></li><li><a href="Service.cGeo.MapS.html">MapS</a></li><li><a href="Service.cGeo.POI.html">POI</a></li><li><a href="Service.cGeo.POIQuery.html">POIQuery</a></li><li><a href="UICalendarCommon.html">UICalendarCommon</a></li><li><a href="UIScroll.html">UIScroll</a></li><li><a href="UIView.html">UIView</a></li><li><a href="Util.cUtilData.CData.html">CData</a></li><li><a href="Util.cUtilDate.CDate.html">CDate</a></li></ul><h3>Namespaces</h3><ul><li><a href="-_.dateUtil.html">dateUtil</a></li><li><a href="cAjax.html">cAjax</a></li><li><a href="Common.cMessageCenter.html">cMessageCenter</a></li><li><a href="Service.cGeo.html">Service.cGeo</a></li><li><a href="Storage.cAbstractStorage.html">cAbstractStorage</a></li><li><a href="Storage.cLocalStorage.html">cLocalStorage</a></li><li><a href="Storage.cMemoryStorage.html">cMemoryStorage</a></li><li><a href="Storage.cSessionStorage.html">cSessionStorage</a></li><li><a href="Store.cCommonStore.html">cCommonStore</a></li><li><a href="Store.cCommonStore.cHeadStore.html">cHeadStore</a></li><li><a href="Store.cCommonStore.cMobileTokenStore.html">cMobileTokenStore</a></li><li><a href="Store.cCommonStore.cUserStore.html">cUserStore</a></li><li><a href="Store.cMarketStore.html">cMarketStore</a></li><li><a href="Store.cMarketStore.SalesObjectStore.html">SalesObjectStore</a></li><li><a href="Store.cMarketStore.SalesStore.html">SalesStore</a></li><li><a href="Store.cMarketStore.UnionStore.html">UnionStore</a></li><li><a href="Store.cMemoryStore.html">cMemoryStore</a></li><li><a href="Util.cUtilCacheViews.html">cUtilCacheViews</a></li><li><a href="Util.cUtilCryptBase64.html">cUtilCryptBase64</a></li><li><a href="Util.cUtilCryptBase64.Base64.html">Base64</a></li><li><a href="Util.cUtilCryptRSA.html">cUtilCryptRSA</a></li><li><a href="Util.cUtilDate.html">cUtilDate</a></li><li><a href="Util.cUtilObject.html">cUtilObject</a></li><li><a href="Util.cUtilPath.html">cUtilPath</a></li><li><a href="Util.cUtilPerformance.html">cUtilPerformance</a></li><li><a href="Util.cUtilValidate.html">cUtilValidate</a></li><li><a href="Util.dgrid.html">dgrid</a></li></ul><h3>Global</h3><ul><li><a href="global.html#_stores%255Bundefined%255D">_stores[undefined]</a></li><li><a href="global.html#abort">abort</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bindthis">bindthis</a></li><li><a href="global.html#buildurl">buildurl</a></li><li><a href="global.html#childViewNames">childViewNames</a></li><li><a href="global.html#clearResult">clearResult</a></li><li><a href="global.html#cPageView#onCreateopts%257B%257D">cPageView#onCreate
+            opts {
+          }</a></li><li><a href="global.html#createElement">createElement</a></li><li><a href="global.html#createRoot">createRoot</a></li><li><a href="global.html#excute">excute</a></li><li><a href="global.html#execute">execute</a></li><li><a href="global.html#extension">extension</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAttr">getAttr</a></li><li><a href="global.html#getBiggerzIndex">getBiggerzIndex</a></li><li><a href="global.html#getCookieVal">getCookieVal</a></li><li><a href="global.html#getCreateId">getCreateId</a></li><li><a href="global.html#getCurStyleOfEl">getCurStyleOfEl</a></li><li><a href="global.html#getDirtyItems">getDirtyItems</a></li><li><a href="global.html#getElementPos">getElementPos</a></li><li><a href="global.html#getElementRealSize">getElementRealSize</a></li><li><a href="global.html#getExpireTime">getExpireTime</a></li><li><a href="global.html#getMousePosOfElement">getMousePosOfElement</a></li><li><a href="global.html#getPageScrollPos">getPageScrollPos</a></li><li><a href="global.html#getPageSize">getPageSize</a></li><li><a href="global.html#getParam">getParam</a></li><li><a href="global.html#getQuery">getQuery</a></li><li><a href="global.html#getResult">getResult</a></li><li><a href="global.html#initialize">initialize</a></li><li><a href="global.html#InputClear">InputClear</a></li><li><a href="global.html#isUseH5Sys">isUseH5Sys</a></li><li><a href="global.html#key">key</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#presetData">presetData</a></li><li><a href="global.html#propertys">propertys</a></li><li><a href="global.html#pushValidates">pushValidates</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeAttr">removeAttr</a></li><li><a href="global.html#rollback">rollback</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setAttr">setAttr</a></li><li><a href="global.html#setConfig">setConfig</a></li><li><a href="global.html#setExpireTime">setExpireTime</a></li><li><a href="global.html#setLifeTime">setLifeTime</a></li><li><a href="global.html#setParam">setParam</a></li><li><a href="global.html#showLog">showLog</a></li><li><a href="global.html#showToast">showToast</a></li><li><a href="global.html#strToNum">strToNum</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Thu Oct 13 2016 13:38:14 GMT+0800 (CST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

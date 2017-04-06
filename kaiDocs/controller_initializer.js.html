@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: controller/initializer.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: controller/initializer.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+core part of route.
+Keep a collection of view instances.
+通过Backbone路由加载不同的js，实现view初始化（或重新加载）
+App.viewCollection: 存放已经初始化的所有view实例
+*/
+define([
+	"dojo/io-query",
+	'3rdlibs/backbone',/*提供路由*/
+	"cutil/c.util.kai",/*暴露公共方法*/
+	'3rdlibs/state-machine',/*控制页面加载生命周期*/
+	"module",/*获得全局配置信息*/
+	"dojo/Deferred"/*返回Defer对象*/
+],function(
+	ioQuery,
+	Backbone,
+	Kai,
+	StateMachine,
+	module,
+	Deferred
+){
+	/**
+	*全局app
+	*/
+	var App = {
+		Routers:{/*Router class*/
+			Main:null
+		},
+		routers:null,/*Router instance*/
+		viewCollection:[],/*keep all view instance*/
+		isH5:true,/*compatible for pc and h5. Default is H5*/
+		env:'',/*enviornment for app. h5 or pc*/
+		viewCollectionData:[],/*configurations for views*/
+		ViewCollection:null,/*View Collection class*/
+		ViewModel:null,/*View Model class*/
+	};
+
+	/**
+	每一个view state model
+	@type Class
+	@description 每一个view实例的状态model
+	*/
+	App.ViewStateModel = Backbone.Model.extend({
+		defauts:{
+			viewName:null,
+			current:null,
+		},
+		idAttribute:'viewName',/*使用viewName作为id*/
+	});
+
+	/**
+	kept for a list of view model
+	@type Class
+	@description 每一个view实例的model的集合
+	*/
+	App.ViewStateCollection = Backbone.Collection.extend({
+		model: App.ViewModel,
+		comparator:'lastVisitTime',
+		modelId: function(attrs){
+			return attrs['viewName'];
+		}
+	});
+
+	/**
+	每一个view model
+	@type Class
+	@description 每一个view实例的model
+	*/
+	App.ViewModel = Backbone.Model.extend({
+		defauts:{
+			hidden:true,
+			createTime:new Date(),
+			lastVisitTime:new Date()
+		},
+
+		idAttribute:'viewName',/*使用viewName作为id*/
+
+		hideChildren:function(){/*hide all children view*/
+			var self = this;
+			_.each(App.viewCollection.models,function(viewModel){
+				if(_.contains(self.childViewNames,viewModel.get('viewName'))){
+					viewModel.set('hidden',true);
+				}
+			});
+		},
+
+		initialize : function() {
+			/**
+			所有的子页面集合
+			*/
+			this.childViewNames = _.pluck(_.where(App.viewCollectionData,{
+				parent:this.get('viewName'),
+			}),'id');
+
+			/**
+			监听页面的显示和隐藏状态变化
+			*/
+			this.on('change:hidden',function(){
+				if(!!this.get('hidden')){//被隐藏
+					this.get('viewInstance') &amp;&amp; this.get('viewInstance').hide();/**hide method is called when the view is hidden*/
+					this.hideChildren();
+				}else{//被显示
+					this.get('viewInstance') &amp;&amp; this.get('viewInstance').show();/*relaunch show method for a certain view model*/
+				}
+			});
+		}
+	});
+
+	/**kept for a list of view model
+	* @description 组合模式就是将一系列相似或相近的对象组合在一个大的对象，由这个大对象提供一些常用的接口来对这些小对象进行操作，代码可重用，对外操作简单。例如：对form内的元素，不考虑页面设计的情况下，一般就剩下input了，对于这些input都有name和value的属性，因此可以将这些input元素作为form对象的成员组合起来，form对象提供对外的接口，便可以实现一些简单的操作，比如设置某个input的value，添加/删除某个input等等。
+	*/
+	App.ViewCollection = Backbone.Collection.extend({
+		model: App.ViewModel,
+		comparator:'lastVisitTime',
+		modelId: function(attrs){
+			return attrs['viewName'];
+		}
+	});
+
+	//define for data used for app
+	App.viewStateCollection = new App.ViewStateCollection();
+	App.viewCollection = new App.ViewCollection();
+	App.viewCollection.loadingViews = [];//for loading page array to avoid duplicate initialize
+
+	//use fsm to manager view states 状态机模式
+	var viewInitialState = 'new';
+	var viewEvents = [
+		{ name: 'startInitializing',  from: 'new',  to: 'initializing'},//初始化
+		{ name: 'finishInitializing',  from: 'initializing',  to: 'initialized'},//初始化
+	    { name: 'startPreheating', from: 'initialized', to: 'preheating'},//从初始化状态 －－>预加载
+	    { name: 'finishPreheating', from: 'preheating', to: 'preheated'},//从初始化状态 －－>预加载
+	    { name: 'startShowing',  from: 'preheated',    to: 'showing'},//预加载 --> 模版数据请求成功
+	    { name: 'finishShowing',  from: 'showing',    to: 'shown'},//预加载 --> 模版数据请求成功
+	    ///*
+	    { name: 'startAsyncRendering', from: 'shown', to: 'dataPreparing'},//从初始化状态 －－>预加载
+	    { name: 'finishAsyncRendering', from: 'dataPreparing', to: 'dataPrepared'},//从初始化状态 －－>预加载
+	    //*/
+	    //{ name: 'show',  from: 'preheated',    to: 'dataPrepared'},//预加载 --> 模版数据请求成功
+	    { name: 'startParsing',  from: 'dataPrepared',    to: 'templateParsing'},//模版数据请求成功 －－> HTML模版解析成功
+	    { name: 'finishParsing',  from: 'templateParsing',    to: 'templateParsed'},//模版数据请求成功 －－> HTML模版解析成功
+
+	    { name: 'startParsing', from: 'templateParsed', to: 'templateParsing'},//HTML模版解析成功 --> dojo组件解析成功 TBD
+	    { name: 'startDojoParsing', from: 'templateParsed', to: 'dojoParsing'},//HTML模版解析成功 --> dojo组件解析成功
+	    { name: 'finishDojoParsing', from: 'dojoParsing', to: 'dojoParsed'},//HTML模版解析成功 --> dojo组件解析成功
+
+		 { name: 'startStartuping', from: 'shown', to: 'loading'},// dojo组件解析成功 --> 页面全部加载成功
+	    { name: 'startStartuping', from: 'dojoParsed', to: 'loading'},// dojo组件解析成功 --> 页面全部加载成功
+	    { name: 'finishStartuping', from: 'loading', to: 'loaded'},// dojo组件解析成功 --> 页面全部加载成功
+
+
+	    /**/
+	    //{ name: 'reparse',  from: 'loaded',    to: 'dataPrepared'},//reparse 页面加载成功后可以重新解析页面
+	    //{ name: 'reparse',  from: 'dataPrepared',    to: 'dataPrepared'},//预加载 --> 模版数据请求成功
+	    { name: 'startParsing',  from: 'loaded',    to: 'templateParsing'},//reparse 页面加载成功后可以重新解析页面 dojoParse已经不需要重新解析dojo控件了
+
+	    { name: 'startShowing', from: 'loaded', to: 'showing'},//view重新显示时调用show方法，view重新进入dataPrepared状态
+
+	    { name: 'destroy', from: 'initializing', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'initialized', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'preheating', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'preheated', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'dataPreparing', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'dataPrepared', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'templateParsing', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'templateParsed', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'dojoParsing', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'dojoParsed', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'loading', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'loaded', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'dataPreparing', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'dataPrepared', to: 'new'},//页面被销毁
+	    { name: 'destroy', from: 'new', to: 'new'},//页面被销毁
+
+	    { name: 'reload', from: 'initializing', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'initialized', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'preheating', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'preheated', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'dataPreparing', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'dataPrepared', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'templateParsing', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'templateParsed', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'dojoParsing', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'dojoParsed', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'loading', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'loaded', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'new', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'dataPreparing', to: 'initialized'},//页面被销毁
+	    { name: 'reload', from: 'dataPrepared', to: 'initialized'},//页面被销毁
+
+	    { name: 'dojoParse', from: 'loaded', to: 'dojoParsing'},//页面被销毁
+    ];
+
+	/**manage for viewport in DOM structure. Tie view to real dom*/
+	var viewportManager = {
+		lastView:null,//前一个view
+
+		lastViewModel:null,//前一个viewModel
+
+		create:function(viewName,opts){//创建一个新的view DOM节点
+			var createTime = new Date();
+			if($('[data-viewname="'+ viewName +'"]').length > 0){//存在已定义view节点
+				var exsitingViewport = $('[data-viewname="'+viewName+'"]');
+				/*
+				var parentViewName = exsitingViewport.parents('[data-viewname]').data('viewname');
+				if(_.isString(parentViewName)){
+					var parentViewModel = App.viewCollection.findWhere({viewName:parentViewName});
+					if(_.isObject(parentViewModel)){
+						parentViewModel.get('childViews').push(viewName);
+					}
+				}
+				*/
+				exsitingViewport.needReplaceTemplate = false;//在view生命周期中是否需要替换模版
+				exsitingViewport.parsed = false;//在view生命周期中是否已经被dojo解析过
+				exsitingViewport.isEmbeded = true ;//在view生命周期中是否是嵌入式的子view
+				exsitingViewport.isViewDataAsync = true ;//在view生命周期中是否需要异步加载页面模版数据
+				exsitingViewport.isViewDataAsync = true ;//在view生命周期中是否需要异步加载页面模版数据
+				exsitingViewport.createTime = createTime;
+				return exsitingViewport;
+			}else{
+				// location.href.indexOf('#') &lt; 0
+				/**
+				不允许分页面路由的情况
+				不是登录页面
+				不是首页
+				*/
+				if(opts.isSubViewInitialize || !(Kai.isH5 || Kai.enableRoute) &amp;&amp; viewName.indexOf('index') &lt; 0 &amp;&amp; (location.hash.indexOf(viewName) &lt; 0) &amp;&amp; viewName.indexOf('login') &lt; 0){
+					return false;//没找到存在节点 但是不允许打开新页面
+				}
+				var subViewportId = 'sub_viewport_' + createTime.valueOf();
+				var subViewportElement = $('&lt;div>',{
+					'class':'sub_viewport',
+					'data-subView_port_Id':subViewportId,
+					'data-viewname':viewName,
+					'data-subview_url':location.href,
+					'id':subViewportId,
+					'data-createtime': createTime,
+				});
+				subViewportElement.createTime = createTime;
+				$('.main-viewport').prepend(subViewportElement);/*add new sub viewport into main-viewport*/
+				return subViewportElement;
+			}
+		},
+
+		set:function(attr,value){
+			this.attr = value;
+		},
+
+		get:function(attr){
+			return this[attr];
+		},
+
+		//获得某个view的节点
+		getViewportNodeByName:function(viewName){
+			return $('[data-viewname="'+viewName+'"]');
+		}
+	};
+
+	/**called function when a route is triggered*/
+	var colorArray = ['SpringGreen','Tan','Teal'];
+
+	/**
+	重新执行view实例show方法,在已经有实例的情况下如果再次被forward执行该实例的方法
+	*/
+	var reShowViewInstance = function(currentViewModel,opts){
+		var viewName = currentViewModel.id;
+		var viewInstance = currentViewModel.get('viewInstance');
+		if(_.isObject(viewInstance)){
+			if(opts &amp;&amp; _.isObject(opts)){
+				if(opts.modelObj){
+					viewInstance.modelObj = opts.modelObj;
+				}
+			}
+		}
+
+		/**
+		页面生命状态不正常
+		*/
+		if(!(currentViewModel &amp;&amp; currentViewModel.get('fsm') &amp;&amp; currentViewModel.get('fsm').can('startShowing'))){
+			//currentViewModel.get('viewInstance').reload();
+			var currentViewInstance = currentViewModel.get('viewInstance');
+			if(currentViewModel.get('viewInstance')){//存在view实例
+				currentViewModel.get('viewInstance').hideLoading();
+				if(opts &amp;&amp; opts.forceNewCreate){//需要生成新的view
+					currentViewModel.get('viewInstance').destroy();
+					Kai.forward(currentViewModel.get('viewName'),opts);
+				}else{//
+				currentViewModel.get('viewInstance').destroySubViews();//删除子页面
+				//if(!(currentViewInstance.fsm.current == 'templateParsed')){
+					currentViewModel.get('viewInstance').reload();//如果多次reload可能出现无限循环
+				//}
+				}
+			}
+			return false;/**TBD*/
+		}
+		console.log("%c" + viewName + ' reRouted', 'color:' + currentViewModel.attributes.viewInstance.logColor);
+		currentViewModel.set('lastVisitTime',-(new Date()));/*更新访问时间*/
+		App.lastView = viewName;
+		App.lastViewModel = currentViewModel;/**update the lastViewModel attribute*/
+		if(opts &amp;&amp; _.isBoolean(opts.isReload)){
+			viewInstance.reload();
+		}else{
+			currentViewModel.unset('hidden',{silent:true});/*trigger change:event*/
+			currentViewModel.set('hidden',false);/*trigger change:event*/
+		}
+	};
+
+	/**全新创建一个view实例.当没有forward的对应view实例的时候*/
+	var initViewInstance = function(viewName,opts){//
+		App.viewCollection.loadingViews.push(viewName);
+		var viewItem = _.findWhere(App.viewCollectionData,{
+			id:viewName
+		});
+		console.log(JSON.stringify(viewItem));//
+		//console.log('initViewInstance called');
+		var viewSourceName;//js
+		var templateSourceName;//html template
+		viewSourceName = (opts.requireViewName || viewName);//请求redirect资源 或 自己的资源
+		if(viewItem.useModule){
+			templateSourceName = viewSourceName + '/template/' + 'template';//redirectview需要
+			viewSourceName = viewSourceName + '/' + 'view';
+		}else{
+			templateSourceName = viewItem.templatePath || viewSourceName.replace('view','template');//redirectview需要
+		}
+		///*
+		var requiredResources = [];
+		if(viewItem.hasTemplate === false &amp;&amp; !viewItem.templatePath){//没有模版 且没有配置模版信息
+			requiredResources = [viewSourceName];//不请求模版文件
+		}else{//请求模版文件
+			requiredResources = [
+				viewSourceName,
+				'dojo/text!' + templateSourceName + '.html'
+			];
+		}
+		//console.log(viewSourceName);
+		//console.log('try to load view and template');
+		//*
+		require(requiredResources,
+			function(View, template){
+				console.log('view and template loaded');
+				console.log("%c" + viewName + ' new routed', 'color:' + opts.logColor);
+				var subViewportElement = viewportManager.create(viewName,opts);//
+				if (!subViewportElement) {
+					App.viewCollection.loadingViews.pop(viewName);
+					return false;
+				}
+				var needReplaceTemplate = true;
+				var isEmbeded = false;
+				var parsed = false;
+				var isViewDataAsync = true;
+				var createTime = subViewportElement.createTime;
+
+				//子view
+				var childViewItems = _.where(App.viewCollectionData,{
+					parent:viewName//parent value equal to self.viewName
+				});
+
+				//父亲view
+				var parentViewItem = {
+
+				};
+				if(_.isObject(opts.currentViewAttributes) &amp;&amp; opts.currentViewAttributes.parent){
+					parentViewItem = _.findWhere(App.viewCollectionData,{
+						id:opts.currentViewAttributes.parent
+					});
+				}
+
+				//状态机
+				var fsm = StateMachine.create({
+					initial:viewInitialState,
+					events: viewEvents
+				});
+
+				if(subViewportElement.needReplaceTemplate === false){
+					needReplaceTemplate = false;
+				}
+				if(subViewportElement.isEmbeded === true){
+					isEmbeded = true;
+				}
+				if(_.isBoolean(subViewportElement.parsed)){
+					parsed = subViewportElement.parsed;
+				}
+				if(_.isBoolean(subViewportElement.isViewDataAsync)){
+					isViewDataAsync = subViewportElement.isViewDataAsync;
+				}
+
+				/*view instance for page baseview contructor called*/
+				if(!_.isFunction(View)){
+					return false;
+				}
+				try{
+					var viewInstance = new View(_.extend({
+						el:subViewportElement,
+						viewName:viewName,
+						templateString:template,
+						isH5:App.isH5,
+						needReplaceTemplate:needReplaceTemplate,
+						isEmbeded:isEmbeded,
+						isViewDataAsync:isViewDataAsync,
+						parsed:parsed,
+						logColor:opts.logColor,
+						childViewItems:childViewItems,
+						parentViewItem:parentViewItem,
+						viewItem:viewItem,
+						siblingViewNames:opts.siblingViewNames,
+						fsm:fsm,
+						modelObj:opts &amp;&amp; opts.modelObj
+					},opts || {}));
+				}catch(e){
+					console.error(e);
+					App.viewCollection.loadingViews = _.reject(App.viewCollection.loadingViews,function(loadingView){
+						return loadingView == viewName;
+					});
+				}
+
+				/*keep viewInstance in viewModel*/
+				var viewModel = new App.ViewModel(_.extend({
+					viewName:viewName,
+					viewInstance:viewInstance,
+					isH5:App.isH5,
+					hidden:false,
+					childViews:[],
+					childViewItems:childViewItems,
+					createTime:createTime,
+					lastVisitTime:-(new Date()),
+					fsm:fsm
+				},opts || {}));
+				console.log('add view Model' + viewName );
+				App.viewCollection.add(viewModel);/*add new viewModel into view collection*/
+				console.log('pop up loading views' + viewName);
+				/*
+				reject_.reject(list, predicate, [context])
+				Returns the values in list without the elements that the truth test (predicate) passes. The opposite of filter.
+				*/
+				//App.viewCollection.loadingViews.pop(viewName);
+				App.viewCollection.loadingViews = _.reject(App.viewCollection.loadingViews,function(loadingView){
+					return loadingView == viewName;
+				});
+				App.lastViewModel = viewModel;/**update the lastViewModel attribute*/
+				App.lastView = viewName;/**TBD to keep the last viewName*/
+				console.log('new view is instanted and added into collection');
+				return true;
+			});
+	};
+
+	/**
+	Backbone 路由触发时调用的函数
+	*/
+	var triggerCallback = function(route,opts){
+		console.log('triggerCallback called');
+		var logColor = _.sample(colorArray,1) + '';//log color used for console log
+		var lastViewModel = null;
+		var currentViewModel = null;
+		var requireViewName = null;
+		var viewName = App.routers &amp;&amp; App.routers.routes[route];//即将访问的view名称
+		console.log(viewName);
+		if(!_.isString(viewName)){
+			return false;
+		}
+
+		//获得当前的view实例的属性
+		var currentViewAttributes =_.find(App.viewCollectionData,function(item){
+			if(item.id == viewName) {//当前viewName
+				return true;
+			}
+		});
+		console.log('currentViewAttributes');
+		console.log(JSON.stringify(currentViewAttributes));
+		if(_.isObject(currentViewAttributes)){//路由中配置了
+			var siblingViewNames = _.pluck(_.where(App.viewCollectionData,{
+				parent:currentViewAttributes.parent,
+			}),'id');
+			siblingViewNames =  _.reject(siblingViewNames,function(siblingViewName){
+				return siblingViewName == viewName;
+			});
+			/*
+			邻居页面节点隐藏
+			*/
+			_.each(App.viewCollection.models,function(viewModel){
+				if(_.contains(siblingViewNames,viewModel.get('viewName') )){
+					viewModel.unset('hidden',{silent:true});
+					viewModel.set('hidden',true);
+				}
+			});
+			if(currentViewAttributes.redirectView){
+				requireViewName = currentViewAttributes.redirectView;//AMD time out issue
+			}
+		}else{
+			return false;//TBD
+		}
+		console.log('before currentViewModel');
+		console.log(App.viewCollection);
+		currentViewModel = App.viewCollection.findWhere({viewName:viewName});//寻找内存中已经存在的实例
+		console.log(currentViewModel);
+
+		/*_.each(App.viewCollection.models,function(viewModel){
+			if(viewModel.get('viewName') != viewName){
+				viewModel.set('hidden',true);
+							}else{//there is already a instance
+								viewModel.get('viewInstance').show();
+								viewModel.set('hidden',false);
+								initialized = true;
+								return true;
+							}
+			});
+		*/
+		if(_.isObject(App.lastViewModel)){//存在上个view实例的历史
+			/*lastViewModel = App.viewCollection.findWhere({viewName:App.lastView});*/
+			if(_.contains(App.lastViewModel.get('childViews'),viewName)){
+				_.noop;/*上一次的ViewMode是自己的父view*/
+			}else{
+				//App.lastViewModel.set('hidden',true);
+				/**hidden the last view Model TBD
+				在有多view及嵌套view的情况下，直接执行上一个view的onhide显得不够科学
+				*/
+			}
+		}else{
+			_.noop;
+		}
+		console.log('loading views');
+		console.log(JSON.stringify(App.viewCollection.loadingViews));
+		if(_.contains(App.viewCollection.loadingViews || [],viewName)){//still loading 页面正在加载中
+			console.log(JSON.stringify(App.viewCollection.loadingViews));
+			return false;
+		}
+
+		/*存在当前view实例，执行show方法*/
+		if(_.isObject(currentViewModel)){
+			//当前model
+			console.log('reshow');
+			reShowViewInstance(currentViewModel,opts);//重新加载实例
+			return true;
+		}else{/*不存在当前view的实例,重新创建实例*/
+			console.log('new create view instance');
+			if(_.isString(opts)){
+				opts = ioQuery.queryToObject(opts);//将query对象转换成对象
+			}
+			initViewInstance(viewName,_.extend(opts||{},{//显示实例 新创建
+				requireViewName:requireViewName,
+				logColor:logColor,
+				currentViewAttributes:currentViewAttributes,
+				siblingViewNames:siblingViewNames,
+				modelObj:opts &amp;&amp; opts.modelObj
+				//deferred:opts.deferred
+			}));
+			return true;
+		}
+	};
+
+	/**define global method forward to new page*/
+	Kai.forward = function (url,opts) {//路由到新页面
+		var deferred = new Deferred();
+		var opts = opts || {};
+		//opts.deferred = deferred;
+		if(opts.keepURL){/*if keepURL param is passed. The URL wont change,only the callback will be called*/
+			triggerCallback(url,opts);//call the callback directly
+		}else{
+			console.log('route');
+			App.routers.navigate(url, {
+				trigger: opts.trigger||true,
+				replace: opts.replace||false
+			});/*backbone route method.*/
+		}
+		return deferred;
+	};
+	/**暴露全局变量*/
+	Kai.views = App.viewCollection;//暴露view集合 当前内存中的view实例集合
+	Kai._store.setData(Kai.views);//存放所有views的集合
+	Kai.viewStates = App.viewStateCollection;/*监听所有页面的状态变化*/
+	Kai.viewportManager = viewportManager;//获得view的DOM节点
+	/**
+	init for controller
+	*/
+	var initializer = {
+		//入口
+		/**
+		use routeConfig to listen to routes
+		*/
+		start: function(routeConfig,opts){
+			//all state model collection
+			//console.log('start entrance');
+			var createViewStatesCollection = function(viewCollectionItems){
+				/*keep viewInstance in viewModel*/
+				_.each(viewCollectionItems,function(viewItem){
+					var viewModel = new App.ViewModel(_.extend({
+						viewName:viewItem.id,
+						current:null
+					},{}));
+					/*add new view state model into view collection*/
+					App.viewStateCollection.add(viewModel);
+				});
+			};
+
+			App.viewCollectionData = opts.viewCollectionData;
+			createViewStatesCollection(App.viewCollectionData);
+			Kai.viewCollectionData = App.viewCollectionData;
+			Kai._store.setData(App.viewCollectionData);//
+
+			App.Routers.Main = Backbone.Router.extend({// Hash maps for routes
+				routes:routeConfig,
+				execute: function(callback, args, name) {
+					/*if (!_.contains(_.keys(routeConfig),name)) {
+						Kai.forward('lost');
+						return false;
+					}*/
+					args.unshift(name);
+					if (callback) callback.apply(this, args);
+				}
+			});
+
+			App.routers = new App.Routers.Main();//定义路由实例，但是还未填充方法handler
+			Kai = _.extend(Kai,module.config());//define global variables under kai namespace
+			if(Kai.isH5 || Kai.enableRoute){
+				for(var route in App.routers.routes){//单层view可以直接路由
+					App.routers.route(route,route,triggerCallback);//only one callback for all route
+				}
+			}else{//多层路由 无法直接访问，禁止路由 直接调用triggerCallback
+				App.routers.route('','',triggerCallback);//only one callback for all route. index
+			}
+			//App.routers.route(/\w*/,'',triggerCallback);//only one callback for all route
+			//App.routers.route('page/:number','',triggerCallback);//only one callback for all route
+			//App.routers.route(/((pc\/|pc\/view\/)\w+)|''/:viewName,'',triggerCallback);//only one callback for all route
+			Backbone.history.start({
+				pushState: false,
+				silent: false
+			});//启动路由
+			//console.log('路由启动');
+			$('#loading-hint').hide();//hide loading hint 加载中 请稍候
+			$('link[rel~="icon"]').attr('href','./app/' + Kai.projectName +'/favicon.ico');//set icon for project
+		}
+	};
+	return initializer;
+});
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="-_checkSelectedDown.html">_checkSelectedDown</a></li><li><a href="-_checkSelectedUp.html">_checkSelectedUp</a></li><li><a href="c.ui.imageSlider.html">imageSlider</a></li><li><a href="cAbstractModel.html">cAbstractModel</a></li><li><a href="cAbstractStore.html">cAbstractStore</a></li><li><a href="cBase.html">cBase</a></li><li><a href="cCoreInherit.html">cCoreInherit</a></li><li><a href="cModel.html">cModel</a></li><li><a href="cPageList.html">cPageList</a></li><li><a href="cSessionStore.html">cSessionStore</a></li><li><a href="cStore.html">cStore</a></li><li><a href="cUIInputClear.html">cUIInputClear</a></li><li><a href="cUserModel.ClientIdModel.html">ClientIdModel</a></li><li><a href="cUserModel.GetUserModel.html">GetUserModel</a></li><li><a href="cUserModel.NotUserLoginModel.html">NotUserLoginModel</a></li><li><a href="cUserModel.ThirdPartInfoModel.html">ThirdPartInfoModel</a></li><li><a href="cUserModel.UserLoginModel.html">UserLoginModel</a></li><li><a href="Service.cGeo.Address.html">Address</a></li><li><a href="Service.cGeo.City.html">City</a></li><li><a href="Service.cGeo.Coordinate.html">Coordinate</a></li><li><a href="Service.cGeo.Geolocation.html">Geolocation</a></li><li><a href="Service.cGeo.Map.html">Map</a></li><li><a href="Service.cGeo.Map.Icon.html">Icon</a></li><li><a href="Service.cGeo.Map.Layer.html">Layer</a></li><li><a href="Service.cGeo.Map.Mark.html">Mark</a></li><li><a href="Service.cGeo.MapS.html">MapS</a></li><li><a href="Service.cGeo.POI.html">POI</a></li><li><a href="Service.cGeo.POIQuery.html">POIQuery</a></li><li><a href="UICalendarCommon.html">UICalendarCommon</a></li><li><a href="UIScroll.html">UIScroll</a></li><li><a href="UIView.html">UIView</a></li><li><a href="Util.cUtilData.CData.html">CData</a></li><li><a href="Util.cUtilDate.CDate.html">CDate</a></li></ul><h3>Namespaces</h3><ul><li><a href="-_.dateUtil.html">dateUtil</a></li><li><a href="cAjax.html">cAjax</a></li><li><a href="Common.cMessageCenter.html">cMessageCenter</a></li><li><a href="Service.cGeo.html">Service.cGeo</a></li><li><a href="Storage.cAbstractStorage.html">cAbstractStorage</a></li><li><a href="Storage.cLocalStorage.html">cLocalStorage</a></li><li><a href="Storage.cMemoryStorage.html">cMemoryStorage</a></li><li><a href="Storage.cSessionStorage.html">cSessionStorage</a></li><li><a href="Store.cCommonStore.html">cCommonStore</a></li><li><a href="Store.cCommonStore.cHeadStore.html">cHeadStore</a></li><li><a href="Store.cCommonStore.cMobileTokenStore.html">cMobileTokenStore</a></li><li><a href="Store.cCommonStore.cUserStore.html">cUserStore</a></li><li><a href="Store.cMarketStore.html">cMarketStore</a></li><li><a href="Store.cMarketStore.SalesObjectStore.html">SalesObjectStore</a></li><li><a href="Store.cMarketStore.SalesStore.html">SalesStore</a></li><li><a href="Store.cMarketStore.UnionStore.html">UnionStore</a></li><li><a href="Store.cMemoryStore.html">cMemoryStore</a></li><li><a href="Util.cUtilCacheViews.html">cUtilCacheViews</a></li><li><a href="Util.cUtilCryptBase64.html">cUtilCryptBase64</a></li><li><a href="Util.cUtilCryptBase64.Base64.html">Base64</a></li><li><a href="Util.cUtilCryptRSA.html">cUtilCryptRSA</a></li><li><a href="Util.cUtilDate.html">cUtilDate</a></li><li><a href="Util.cUtilObject.html">cUtilObject</a></li><li><a href="Util.cUtilPath.html">cUtilPath</a></li><li><a href="Util.cUtilPerformance.html">cUtilPerformance</a></li><li><a href="Util.cUtilValidate.html">cUtilValidate</a></li><li><a href="Util.dgrid.html">dgrid</a></li></ul><h3>Global</h3><ul><li><a href="global.html#_stores%255Bundefined%255D">_stores[undefined]</a></li><li><a href="global.html#abort">abort</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bindthis">bindthis</a></li><li><a href="global.html#buildurl">buildurl</a></li><li><a href="global.html#childViewNames">childViewNames</a></li><li><a href="global.html#clearResult">clearResult</a></li><li><a href="global.html#cPageView#onCreateopts%257B%257D">cPageView#onCreate
+            opts {
+          }</a></li><li><a href="global.html#createElement">createElement</a></li><li><a href="global.html#createRoot">createRoot</a></li><li><a href="global.html#excute">excute</a></li><li><a href="global.html#execute">execute</a></li><li><a href="global.html#extension">extension</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAttr">getAttr</a></li><li><a href="global.html#getBiggerzIndex">getBiggerzIndex</a></li><li><a href="global.html#getCookieVal">getCookieVal</a></li><li><a href="global.html#getCreateId">getCreateId</a></li><li><a href="global.html#getCurStyleOfEl">getCurStyleOfEl</a></li><li><a href="global.html#getDirtyItems">getDirtyItems</a></li><li><a href="global.html#getElementPos">getElementPos</a></li><li><a href="global.html#getElementRealSize">getElementRealSize</a></li><li><a href="global.html#getExpireTime">getExpireTime</a></li><li><a href="global.html#getMousePosOfElement">getMousePosOfElement</a></li><li><a href="global.html#getPageScrollPos">getPageScrollPos</a></li><li><a href="global.html#getPageSize">getPageSize</a></li><li><a href="global.html#getParam">getParam</a></li><li><a href="global.html#getQuery">getQuery</a></li><li><a href="global.html#getResult">getResult</a></li><li><a href="global.html#initialize">initialize</a></li><li><a href="global.html#InputClear">InputClear</a></li><li><a href="global.html#isUseH5Sys">isUseH5Sys</a></li><li><a href="global.html#key">key</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#presetData">presetData</a></li><li><a href="global.html#propertys">propertys</a></li><li><a href="global.html#pushValidates">pushValidates</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeAttr">removeAttr</a></li><li><a href="global.html#rollback">rollback</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setAttr">setAttr</a></li><li><a href="global.html#setConfig">setConfig</a></li><li><a href="global.html#setExpireTime">setExpireTime</a></li><li><a href="global.html#setLifeTime">setLifeTime</a></li><li><a href="global.html#setParam">setParam</a></li><li><a href="global.html#showLog">showLog</a></li><li><a href="global.html#showToast">showToast</a></li><li><a href="global.html#strToNum">strToNum</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Thu Oct 13 2016 13:38:14 GMT+0800 (CST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

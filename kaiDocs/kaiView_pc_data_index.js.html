@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: kaiView/pc/data/index.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: kaiView/pc/data/index.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/*
+首页
+作者：chenxiangyun01@company.com
+*/
+define([
+  'dojo/Deferred',
+  "dojo/_base/array"
+],
+  function (
+    Deferred,
+    arrayUtil
+  ) {
+  "use strict";
+
+  //查看页面状态
+  var getViewStatesColumnsDefinition = function (argument) {
+    return arrayUtil.map([
+      { label: "页面URI", field: "id", width: '250'},//
+      { label: "父页面id", field: "parent", width: '150' },
+      { label: "节点名称", field: "nodeName", width: '60' },
+      //{ label: "页面名称", field: "viewName", width: '10%' },
+      //{ label: "是否是共用页面", field: "inaccessible", width: '20' },
+      { label: "默认访问", field: "isDefault",width:'50'},
+      { label: "转向页面", field: "redirectView",  width: '150'},
+      { label: "页面状态", field: "state",  width: '50'},
+      { label: "前端", field: "fe",  width: '25'},
+      { label: "后台", field: "api",  width: '25'},
+    ], function (column) {
+      return column;
+    });
+  };
+
+  //查看接口状态
+  var getInterfaceStatesColumnsDefinition = function (argument) {
+    return arrayUtil.map([
+      /*
+      url:opt.url,
+      loadedLength:loadedLength,
+      status:'加载中',
+      requestTime:new Date()
+      */
+      { label: "请求地址",field: "id", width: '250'},//
+      //{ label: "请求描述",field: "description", width: '250'},//
+      //{ label: "报文长度", field: "loadedLength",  width: '50'},
+      { label: "请求时间", field: "requestTime",  width: '50',formatter:function(requestTime){
+        if(requestTime){
+          return requestTime.toTimeString();
+        }else{
+          return '';
+        }
+      }},
+      { label: "状态更新时间", field: "statusChangeTime",  width: '50',formatter:function(statusChangeTime){
+        if(statusChangeTime){
+          return statusChangeTime.toTimeString();
+        }else{
+          return '';
+        }
+      }},
+      { label: "耗时(ms)", field: "costTime",  width: '50'},
+      { label: "状态", field: "status",  width: '50'},
+      { label: "错误码", field: "statusText",  width: '50'},
+    ], function (column) {
+      return column;
+    });
+  };
+
+  /*used to fetch data*/
+  var dataFetcher = {
+    /**
+    获得所有view的列表
+    */
+    getViewsStatesList:function(){
+      var self = this;
+      return Kai._store.fetch();
+    },
+
+    /**
+    获得所有的
+    */
+    getInterfaceStatesList:function(){
+      var self = this;
+      return Kai._interfaceStatesStore.fetch();
+    }
+  };
+
+  return {
+    dataFetcher:dataFetcher,
+    getColumnsDefinition:getViewStatesColumnsDefinition,
+    getInterfaceColumnsDefinition:getInterfaceStatesColumnsDefinition
+  };
+});
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="-_checkSelectedDown.html">_checkSelectedDown</a></li><li><a href="-_checkSelectedUp.html">_checkSelectedUp</a></li><li><a href="c.ui.imageSlider.html">imageSlider</a></li><li><a href="cAbstractModel.html">cAbstractModel</a></li><li><a href="cAbstractStore.html">cAbstractStore</a></li><li><a href="cBase.html">cBase</a></li><li><a href="cCoreInherit.html">cCoreInherit</a></li><li><a href="cModel.html">cModel</a></li><li><a href="cPageList.html">cPageList</a></li><li><a href="cSessionStore.html">cSessionStore</a></li><li><a href="cStore.html">cStore</a></li><li><a href="cUIInputClear.html">cUIInputClear</a></li><li><a href="cUserModel.ClientIdModel.html">ClientIdModel</a></li><li><a href="cUserModel.GetUserModel.html">GetUserModel</a></li><li><a href="cUserModel.NotUserLoginModel.html">NotUserLoginModel</a></li><li><a href="cUserModel.ThirdPartInfoModel.html">ThirdPartInfoModel</a></li><li><a href="cUserModel.UserLoginModel.html">UserLoginModel</a></li><li><a href="Service.cGeo.Address.html">Address</a></li><li><a href="Service.cGeo.City.html">City</a></li><li><a href="Service.cGeo.Coordinate.html">Coordinate</a></li><li><a href="Service.cGeo.Geolocation.html">Geolocation</a></li><li><a href="Service.cGeo.Map.html">Map</a></li><li><a href="Service.cGeo.Map.Icon.html">Icon</a></li><li><a href="Service.cGeo.Map.Layer.html">Layer</a></li><li><a href="Service.cGeo.Map.Mark.html">Mark</a></li><li><a href="Service.cGeo.MapS.html">MapS</a></li><li><a href="Service.cGeo.POI.html">POI</a></li><li><a href="Service.cGeo.POIQuery.html">POIQuery</a></li><li><a href="UICalendarCommon.html">UICalendarCommon</a></li><li><a href="UIScroll.html">UIScroll</a></li><li><a href="UIView.html">UIView</a></li><li><a href="Util.cUtilData.CData.html">CData</a></li><li><a href="Util.cUtilDate.CDate.html">CDate</a></li></ul><h3>Namespaces</h3><ul><li><a href="-_.dateUtil.html">dateUtil</a></li><li><a href="cAjax.html">cAjax</a></li><li><a href="Common.cMessageCenter.html">cMessageCenter</a></li><li><a href="Service.cGeo.html">Service.cGeo</a></li><li><a href="Storage.cAbstractStorage.html">cAbstractStorage</a></li><li><a href="Storage.cLocalStorage.html">cLocalStorage</a></li><li><a href="Storage.cMemoryStorage.html">cMemoryStorage</a></li><li><a href="Storage.cSessionStorage.html">cSessionStorage</a></li><li><a href="Store.cCommonStore.html">cCommonStore</a></li><li><a href="Store.cCommonStore.cHeadStore.html">cHeadStore</a></li><li><a href="Store.cCommonStore.cMobileTokenStore.html">cMobileTokenStore</a></li><li><a href="Store.cCommonStore.cUserStore.html">cUserStore</a></li><li><a href="Store.cMarketStore.html">cMarketStore</a></li><li><a href="Store.cMarketStore.SalesObjectStore.html">SalesObjectStore</a></li><li><a href="Store.cMarketStore.SalesStore.html">SalesStore</a></li><li><a href="Store.cMarketStore.UnionStore.html">UnionStore</a></li><li><a href="Store.cMemoryStore.html">cMemoryStore</a></li><li><a href="Util.cUtilCacheViews.html">cUtilCacheViews</a></li><li><a href="Util.cUtilCryptBase64.html">cUtilCryptBase64</a></li><li><a href="Util.cUtilCryptBase64.Base64.html">Base64</a></li><li><a href="Util.cUtilCryptRSA.html">cUtilCryptRSA</a></li><li><a href="Util.cUtilDate.html">cUtilDate</a></li><li><a href="Util.cUtilObject.html">cUtilObject</a></li><li><a href="Util.cUtilPath.html">cUtilPath</a></li><li><a href="Util.cUtilPerformance.html">cUtilPerformance</a></li><li><a href="Util.cUtilValidate.html">cUtilValidate</a></li><li><a href="Util.dgrid.html">dgrid</a></li></ul><h3>Global</h3><ul><li><a href="global.html#_stores%255Bundefined%255D">_stores[undefined]</a></li><li><a href="global.html#abort">abort</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bindthis">bindthis</a></li><li><a href="global.html#buildurl">buildurl</a></li><li><a href="global.html#childViewNames">childViewNames</a></li><li><a href="global.html#clearResult">clearResult</a></li><li><a href="global.html#cPageView#onCreateopts%257B%257D">cPageView#onCreate
+            opts {
+          }</a></li><li><a href="global.html#createElement">createElement</a></li><li><a href="global.html#createRoot">createRoot</a></li><li><a href="global.html#excute">excute</a></li><li><a href="global.html#execute">execute</a></li><li><a href="global.html#extension">extension</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAttr">getAttr</a></li><li><a href="global.html#getBiggerzIndex">getBiggerzIndex</a></li><li><a href="global.html#getCookieVal">getCookieVal</a></li><li><a href="global.html#getCreateId">getCreateId</a></li><li><a href="global.html#getCurStyleOfEl">getCurStyleOfEl</a></li><li><a href="global.html#getDirtyItems">getDirtyItems</a></li><li><a href="global.html#getElementPos">getElementPos</a></li><li><a href="global.html#getElementRealSize">getElementRealSize</a></li><li><a href="global.html#getExpireTime">getExpireTime</a></li><li><a href="global.html#getMousePosOfElement">getMousePosOfElement</a></li><li><a href="global.html#getPageScrollPos">getPageScrollPos</a></li><li><a href="global.html#getPageSize">getPageSize</a></li><li><a href="global.html#getParam">getParam</a></li><li><a href="global.html#getQuery">getQuery</a></li><li><a href="global.html#getResult">getResult</a></li><li><a href="global.html#initialize">initialize</a></li><li><a href="global.html#InputClear">InputClear</a></li><li><a href="global.html#isUseH5Sys">isUseH5Sys</a></li><li><a href="global.html#key">key</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#presetData">presetData</a></li><li><a href="global.html#propertys">propertys</a></li><li><a href="global.html#pushValidates">pushValidates</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeAttr">removeAttr</a></li><li><a href="global.html#rollback">rollback</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#setAttr">setAttr</a></li><li><a href="global.html#setConfig">setConfig</a></li><li><a href="global.html#setExpireTime">setExpireTime</a></li><li><a href="global.html#setLifeTime">setLifeTime</a></li><li><a href="global.html#setParam">setParam</a></li><li><a href="global.html#showLog">showLog</a></li><li><a href="global.html#showToast">showToast</a></li><li><a href="global.html#strToNum">strToNum</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Thu Oct 13 2016 13:38:14 GMT+0800 (CST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
